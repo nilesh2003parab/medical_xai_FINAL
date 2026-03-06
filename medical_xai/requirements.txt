@@ -2,7 +2,7 @@ streamlit
 torch
 torchvision
 Pillow
-numpy
+numpy<2.0.0
 matplotlib
 scikit-learn
 scikit-image
