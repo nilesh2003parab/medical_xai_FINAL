@@ -386,7 +386,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("#### ⚙️ Analysis Settings")
-    lime_samples   = st.slider("LIME Samples",   min_value=100, max_value=1000, value=500, step=100)
+    lime_samples   = st.slider("LIME Samples",   min_value=50,  max_value=200,  value=50,  step=50)
     lime_features  = st.slider("LIME Regions",   min_value=5,   max_value=20,   value=10)
     shap_background= st.slider("SHAP Background", min_value=5,  max_value=50,   value=20)
 
