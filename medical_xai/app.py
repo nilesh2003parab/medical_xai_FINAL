@@ -1,12 +1,3 @@
-"""
-Real-Time Explainable Deep Learning Framework for Medical Image Classification
-MSc/PhD Level Project — Streamlit Interface
-
-Supported Kaggle Dataset:
-    Chest X-Ray Images (Pneumonia)
-    https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia
-    Classes: NORMAL / PNEUMONIA
-"""
 
 # ── Standard Library ──────────────────────────────────────────────────────────
 import csv
