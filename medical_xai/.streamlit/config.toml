@@ -1,15 +1,11 @@
 [theme]
 base = "light"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#66cbf3"
-textColor = "#222222"
-primaryColor = "#1a73e8"
+primaryColor = "#0288d1"
+backgroundColor = "#f0f8ff"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#1a2a3a"
 font = "sans serif"
 
 [server]
-maxUploadSize = 10
-headless = false
-port = 8501
-
-[browser]
-gatherUsageStats = false
+headless = true
+enableCORS = false
