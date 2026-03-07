@@ -84,7 +84,7 @@ st.markdown("""
     /* SIDEBAR — light sky blue */
     section[data-testid="stSidebar"],
     section[data-testid="stSidebar"] > div {
-        background-color: #e1f5fe !important;
+        background-color: #b3e5fc !important;
         border-right: 1px solid #29b6f6 !important;
     }
     section[data-testid="stSidebar"] label,
