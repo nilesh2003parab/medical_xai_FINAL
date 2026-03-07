@@ -70,27 +70,60 @@ st.markdown("""
 
     html, body, [class*="css"] {
         font-family: 'Inter', 'Segoe UI', sans-serif;
+        color: #1a2a3a !important;
     }
 
-    /* ── Page background ── */
-    .stApp {
-        background-color: #f0f8ff;
+    /* ── Force light background everywhere ── */
+    .stApp, .main, .block-container,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stHeader"],
+    [data-testid="stToolbar"] {
+        background-color: #f0f8ff !important;
+        color: #1a2a3a !important;
     }
 
     /* ── Sidebar ── */
-    section[data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #bde0f7;
+    section[data-testid="stSidebar"],
+    section[data-testid="stSidebar"] > div {
+        background-color: #ffffff !important;
+        border-right: 1px solid #bde0f7 !important;
     }
-    section[data-testid="stSidebar"] label {
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] span {
         color: #1a6ea8 !important;
         font-size: 0.82rem !important;
         font-weight: 500 !important;
     }
 
+    /* ── File uploader — force white/light ── */
+    [data-testid="stFileUploader"],
+    [data-testid="stFileUploader"] > div,
+    [data-testid="stFileUploader"] section,
+    [data-testid="stFileUploaderDropzone"],
+    [data-testid="stFileUploaderDropzoneInstructions"] {
+        background-color: #ffffff !important;
+        background: #ffffff !important;
+        border: 2px dashed #90cff0 !important;
+        border-radius: 8px !important;
+        color: #1a6ea8 !important;
+    }
+    [data-testid="stFileUploader"] button,
+    [data-testid="stFileUploaderDropzone"] button {
+        background: #0288d1 !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 6px !important;
+    }
+    [data-testid="stFileUploader"] small,
+    [data-testid="stFileUploader"] span,
+    [data-testid="stFileUploader"] p {
+        color: #5b9ec9 !important;
+    }
+
     /* ── Cards ── */
     .xai-card {
-        background: #ffffff;
+        background: #ffffff !important;
         border: 1px solid #c8e6f8;
         border-radius: 8px;
         padding: 14px 18px;
@@ -175,23 +208,17 @@ st.markdown("""
     /* ── Divider ── */
     hr { border-color: #c8e6f8 !important; }
 
-    /* ── File uploader ── */
-    [data-testid="stFileUploader"] {
-        border: 2px dashed #90cff0 !important;
-        border-radius: 8px !important;
-        background: #ffffff !important;
-    }
-
     /* ── Tabs ── */
     .stTabs [data-baseweb="tab-list"] {
-        background: #e1f3fc;
+        background: #e1f3fc !important;
         border-radius: 8px;
         padding: 3px;
     }
     .stTabs [data-baseweb="tab"] {
         border-radius: 6px;
-        color: #0d7dc2;
+        color: #0d7dc2 !important;
         font-weight: 500;
+        background: transparent !important;
     }
     .stTabs [aria-selected="true"] {
         background: #ffffff !important;
@@ -211,7 +238,8 @@ st.markdown("""
     }
 
     /* ── Expander ── */
-    .streamlit-expanderHeader {
+    .streamlit-expanderHeader,
+    [data-testid="stExpander"] summary {
         background: #e1f3fc !important;
         border-radius: 6px !important;
         color: #0d7dc2 !important;
@@ -219,14 +247,45 @@ st.markdown("""
     }
 
     /* ── Input fields ── */
-    input, textarea, select {
+    input, textarea, select,
+    [data-baseweb="input"], [data-baseweb="select"],
+    [data-baseweb="textarea"] {
         border: 1px solid #90cff0 !important;
         border-radius: 5px !important;
         background: #ffffff !important;
+        color: #1a2a3a !important;
+    }
+
+    /* ── Text/paragraph color ── */
+    p, li, span, label, h1, h2, h3, h4 {
+        color: #1a2a3a !important;
     }
 
     /* ── Captions ── */
-    .stCaption { color: #5b9ec9 !important; }
+    .stCaption, [data-testid="stCaptionContainer"] { color: #5b9ec9 !important; }
+
+    /* ── Selectbox/dropdown ── */
+    [data-testid="stSelectbox"] > div > div {
+        background: #ffffff !important;
+        border: 1px solid #90cff0 !important;
+        color: #1a2a3a !important;
+    }
+
+    /* ── Number input ── */
+    [data-testid="stNumberInput"] input {
+        background: #ffffff !important;
+        color: #1a2a3a !important;
+    }
+
+    /* ── Checkbox ── */
+    [data-testid="stCheckbox"] label {
+        color: #1a2a3a !important;
+    }
+
+    /* ── Slider ── */
+    [data-testid="stSlider"] {
+        color: #0288d1 !important;
+    }
 
 </style>
 """, unsafe_allow_html=True)
