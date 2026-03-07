@@ -612,12 +612,12 @@ with col_info:
 
     # ── Warn user if no trained weights loaded ────────────────────────────
     import os
-    weights_exist = os.path.exists("weights/best_model.pth") or os.path.exists("weights/fusion_model.pth")
+    weights_exist = os.path.exists("weights/resnet18_pneumonia_classifier.pth")
     if not weights_exist:
         st.warning(
             "⚠️ **No trained weights found.** The model is using ImageNet pre-trained weights only "
             "(not fine-tuned on chest X-rays). Predictions may be inaccurate. "
-            "Upload `weights/best_model.pth` to your repo for accurate results.",
+            "Upload `weights/resnet18_pneumonia_classifier.pth` to your repo for accurate results.",
             icon="⚠️"
         )
 
