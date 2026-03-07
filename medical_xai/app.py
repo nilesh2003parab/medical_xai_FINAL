@@ -296,7 +296,7 @@ def load_model():
 # CACHED INFERENCE FUNCTIONS
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_data(show_spinner=False)
+# No cache on prediction — must rerun for each new image
 def cached_prediction(_model, _img_tensor, threshold=0.35):
     """
     Predict with adjustable decision threshold.
@@ -334,11 +334,11 @@ def cached_shap(_model, _img_tensor):
     plt.close(fig)
     return buf.getvalue(), score
 
-@st.cache_data(show_spinner=False)
+# No cache on gradcam — must always use the currently uploaded image
 def cached_gradcam(_model, _img_tensor, _image):
     return generate_gradcam(_model, _img_tensor, _image)
 
-@st.cache_data(show_spinner=False)
+# No cache on escore
 def cached_escore(_model, _img_tensor, label):
     return e_score(_model, _img_tensor, label)
 
@@ -608,7 +608,18 @@ with col_info:
     st.markdown('<div class="section-header">🩺 Model Prediction</div>', unsafe_allow_html=True)
 
     with st.spinner("Running inference..."):
-        pred_class, confidence, label, all_probs = cached_prediction(model, img_tensor, threshold=pneumonia_threshold)
+        pred_class, confidence, label, all_probs = cached_prediction(model, img_tensor, threshold=max(pneumonia_threshold, 0.60))
+
+    # ── Warn user if no trained weights loaded ────────────────────────────
+    import os
+    weights_exist = os.path.exists("weights/best_model.pth") or os.path.exists("weights/fusion_model.pth")
+    if not weights_exist:
+        st.warning(
+            "⚠️ **No trained weights found.** The model is using ImageNet pre-trained weights only "
+            "(not fine-tuned on chest X-rays). Predictions may be inaccurate. "
+            "Upload `weights/best_model.pth` to your repo for accurate results.",
+            icon="⚠️"
+        )
 
     badge_class = "pred-badge-pneumonia" if label == "Pneumonia" else "pred-badge-normal"
     icon = "⚠️" if label == "Pneumonia" else "✅"
