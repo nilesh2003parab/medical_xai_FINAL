@@ -1,30 +1,55 @@
+"""
+Real-Time Explainable Deep Learning Framework for Medical Image Classification
+MSc/PhD Level Project — Streamlit Interface
+
+Supported Kaggle Dataset:
+    Chest X-Ray Images (Pneumonia)
+    https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia
+    Classes: NORMAL / PNEUMONIA
+"""
 
 # ── Standard Library ──────────────────────────────────────────────────────────
 import csv
 import os
+import sys
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 
-# ── Third-party ───────────────────────────────────────────────────────────────
-import numpy as np
-import matplotlib.pyplot as plt
-import streamlit as st
-import torch
-from PIL import Image
+# ── Ensure folders exist on Streamlit Cloud ───────────────────────────────────
+os.makedirs("records", exist_ok=True)
+os.makedirs("weights", exist_ok=True)
 
-# ── Project imports ───────────────────────────────────────────────────────────
-from models.fusion_model import FusionModel
-from utils.preprocessing import get_transform
-from utils.feedback_dataset import doctor_feedback
-from explainability.gradcam import generate_gradcam
-from explainability.lime_exp import run_lime
-from explainability.xray_annotator import annotate_xray
-from utils.treatment_protocol import get_treatment_plan, get_dominant_severity
-from utils.report_generator import generate_pdf_report
-from explainability.shap_exp import run_shap
-from evaluation.escore import e_score
-from utils.image_quality import check_image_quality, annotate_quality_issues, quality_gauge_figure
+# ── Matplotlib backend BEFORE any other matplotlib/pyplot import ──────────────
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+# ── Streamlit (imported early so we can show errors on screen) ────────────────
+import streamlit as st
+
+# ── Remaining third-party ─────────────────────────────────────────────────────
+try:
+    import numpy as np
+    import torch
+    from PIL import Image
+    from models.fusion_model import FusionModel
+    from utils.preprocessing import get_transform
+    from utils.feedback_dataset import doctor_feedback
+    from explainability.gradcam import generate_gradcam
+    from explainability.lime_exp import run_lime
+    from explainability.xray_annotator import annotate_xray
+    from utils.treatment_protocol import get_treatment_plan, get_dominant_severity
+    from utils.report_generator import generate_pdf_report
+    from explainability.shap_exp import run_shap
+    from evaluation.escore import e_score
+    from utils.image_quality import check_image_quality, annotate_quality_issues, quality_gauge_figure
+except Exception as _import_err:
+    st.set_page_config(page_title="MedXAI", page_icon="🫁", layout="wide")
+    st.error(f"❌ Startup failed: {_import_err}")
+    st.code(traceback.format_exc())
+    st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -41,90 +66,168 @@ st.set_page_config(
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
     html, body, [class*="css"] {
-        font-family: 'Segoe UI', Arial, sans-serif;
-        font-size: 15px;
+        font-family: 'Inter', 'Segoe UI', sans-serif;
     }
-    .stApp { background-color: #ffffff; color: #222222; }
+
+    /* ── Page background ── */
+    .stApp {
+        background-color: #f0f8ff;
+    }
+
+    /* ── Sidebar ── */
     section[data-testid="stSidebar"] {
-        background-color: #f5f5f5;
-        border-right: 1px solid #e0e0e0;
+        background-color: #ffffff;
+        border-right: 1px solid #bde0f7;
     }
+    section[data-testid="stSidebar"] label {
+        color: #1a6ea8 !important;
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
+    }
+
+    /* ── Cards ── */
     .xai-card {
-        background: #f9f9f9;
-        border: 1px solid #e0e0e0;
-        border-radius: 6px;
-        padding: 14px 16px;
+        background: #ffffff;
+        border: 1px solid #c8e6f8;
+        border-radius: 8px;
+        padding: 14px 18px;
         margin: 8px 0;
+        box-shadow: 0 1px 4px rgba(100,180,240,0.10);
     }
     .xai-card-title {
         font-size: 0.92rem;
         font-weight: 600;
-        color: #1a73e8;
+        color: #0d7dc2;
         margin-bottom: 6px;
     }
+
+    /* ── Prediction badges ── */
     .pred-badge-pneumonia {
         display: inline-block;
-        background: #d32f2f;
+        background: #e53935;
         color: white;
         font-weight: 600;
-        padding: 7px 18px;
-        border-radius: 5px;
         font-size: 0.95rem;
+        padding: 8px 20px;
+        border-radius: 6px;
     }
     .pred-badge-normal {
         display: inline-block;
         background: #2e7d32;
         color: white;
         font-weight: 600;
-        padding: 7px 18px;
-        border-radius: 5px;
         font-size: 0.95rem;
+        padding: 8px 20px;
+        border-radius: 6px;
     }
+
+    /* ── Score chip ── */
     .score-chip {
         display: inline-block;
-        background: #f0f0f0;
-        border: 1px solid #cccccc;
-        border-radius: 4px;
-        padding: 2px 10px;
+        background: #e1f3fc;
+        border: 1px solid #90cff0;
+        border-radius: 20px;
+        padding: 3px 12px;
         font-size: 0.82rem;
-        color: #333333;
+        color: #0d7dc2;
         margin-top: 5px;
+        font-weight: 500;
     }
+
+    /* ── Section header ── */
     .section-header {
         font-size: 1rem;
         font-weight: 600;
-        color: #1a73e8;
-        border-left: 3px solid #1a73e8;
-        padding-left: 9px;
-        margin: 16px 0 8px 0;
+        color: #0d7dc2;
+        border-left: 3px solid #29b6f6;
+        padding-left: 10px;
+        margin: 18px 0 10px 0;
     }
+
+    /* ── Top header bar ── */
     .top-header {
-        background: #1a73e8;
-        border-radius: 6px;
-        padding: 14px 20px;
-        margin-bottom: 18px;
+        background: linear-gradient(90deg, #0288d1, #29b6f6);
+        border-radius: 8px;
+        padding: 16px 22px;
+        margin-bottom: 20px;
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 14px;
     }
+
+    /* ── Buttons ── */
     .stButton > button {
-        background: #1a73e8 !important;
+        background: #0288d1 !important;
         color: white !important;
         border: none !important;
-        border-radius: 5px !important;
-        font-weight: 600 !important;
-        padding: 7px 20px !important;
-    }
-    .stButton > button:hover { background: #1558b0 !important; }
-    hr { border-color: #e0e0e0 !important; }
-    [data-testid="stFileUploader"] {
-        border: 2px dashed #cccccc !important;
         border-radius: 6px !important;
-        background: #fafafa !important;
+        font-weight: 600 !important;
+        padding: 8px 22px !important;
+        transition: background 0.2s;
     }
-    [data-testid="stMetricValue"] { font-size: 1.4rem !important; color: #1a73e8 !important; }
-    [data-testid="stMetricLabel"] { font-size: 0.78rem !important; color: #666666 !important; }
+    .stButton > button:hover {
+        background: #0277bd !important;
+    }
+
+    /* ── Divider ── */
+    hr { border-color: #c8e6f8 !important; }
+
+    /* ── File uploader ── */
+    [data-testid="stFileUploader"] {
+        border: 2px dashed #90cff0 !important;
+        border-radius: 8px !important;
+        background: #ffffff !important;
+    }
+
+    /* ── Tabs ── */
+    .stTabs [data-baseweb="tab-list"] {
+        background: #e1f3fc;
+        border-radius: 8px;
+        padding: 3px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 6px;
+        color: #0d7dc2;
+        font-weight: 500;
+    }
+    .stTabs [aria-selected="true"] {
+        background: #ffffff !important;
+        color: #0288d1 !important;
+        font-weight: 600 !important;
+    }
+
+    /* ── Metrics ── */
+    [data-testid="stMetricValue"] {
+        color: #0288d1 !important;
+        font-size: 1.5rem !important;
+        font-weight: 700 !important;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #5b9ec9 !important;
+        font-size: 0.78rem !important;
+    }
+
+    /* ── Expander ── */
+    .streamlit-expanderHeader {
+        background: #e1f3fc !important;
+        border-radius: 6px !important;
+        color: #0d7dc2 !important;
+        font-weight: 500 !important;
+    }
+
+    /* ── Input fields ── */
+    input, textarea, select {
+        border: 1px solid #90cff0 !important;
+        border-radius: 5px !important;
+        background: #ffffff !important;
+    }
+
+    /* ── Captions ── */
+    .stCaption { color: #5b9ec9 !important; }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -132,6 +235,7 @@ st.markdown("""
 # DEVICE & MODEL LOADING
 # ─────────────────────────────────────────────────────────────────────────────
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 @st.cache_resource(show_spinner=False)
 def load_model():
@@ -156,25 +260,42 @@ def load_model():
 # ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data(show_spinner=False)
-def cached_prediction(_model, _img_tensor):
+def cached_prediction(_model, _img_tensor, threshold=0.35):
+    """
+    Predict with adjustable decision threshold.
+    threshold: if P(Pneumonia) >= threshold → predict Pneumonia
+    Lowered from 0.50 to 0.35 to reduce false negatives (missed pneumonia).
+    """
     _model.eval()
     with torch.no_grad():
         logits = _model(_img_tensor)
         probs  = torch.softmax(logits, dim=1)
-    pred_class = torch.argmax(probs, dim=1).item()
-    confidence = probs[0, pred_class].item()
-    label = "Pneumonia" if pred_class == 1 else "Normal"
+    pneumonia_prob = probs[0, 1].item()
+    # Apply custom threshold instead of argmax
+    if pneumonia_prob >= threshold:
+        pred_class = 1
+        confidence = pneumonia_prob
+        label = "Pneumonia"
+    else:
+        pred_class = 0
+        confidence = probs[0, 0].item()
+        label = "Normal"
     return pred_class, confidence, label, probs[0].tolist()
 
-@st.cache_data(show_spinner=False)
+# No cache on lime/shap — ensures fresh results with updated code
 def cached_lime(_model, image_np, _transform):
     return run_lime(_model, image_np, _transform)
 
-@st.cache_data(show_spinner=False)
+# No cache — always recompute with latest code
 def cached_shap(_model, _img_tensor):
     fig, score = run_shap(_model, _img_tensor)
+    # Convert figure to PNG bytes so it survives cache serialization
+    import io
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=130, facecolor="white")
+    buf.seek(0)
     plt.close(fig)
-    return fig, score
+    return buf.getvalue(), score
 
 @st.cache_data(show_spinner=False)
 def cached_gradcam(_model, _img_tensor, _image):
@@ -233,6 +354,28 @@ with st.sidebar:
     shap_background= st.slider("SHAP Background", min_value=5,  max_value=50,   value=20)
 
     st.markdown("---")
+    st.markdown("#### 🎯 Prediction Sensitivity")
+    pneumonia_threshold = st.slider(
+        "Pneumonia Threshold",
+        min_value=0.10, max_value=0.70, value=0.35, step=0.05,
+        help="Lower = catches more Pneumonia (fewer missed cases). Higher = more conservative. Default 0.35 recommended."
+    )
+    # Sensitivity label
+    if pneumonia_threshold <= 0.25:
+        sens_label = "🔴 Very High Sensitivity"
+        sens_note  = "May over-detect pneumonia"
+    elif pneumonia_threshold <= 0.40:
+        sens_label = "🟢 Recommended"
+        sens_note  = "Balanced — reduces missed cases"
+    elif pneumonia_threshold <= 0.55:
+        sens_label = "🟡 Conservative"
+        sens_note  = "May miss borderline cases"
+    else:
+        sens_label = "🔴 Very Conservative"
+        sens_note  = "High risk of missing pneumonia"
+    st.caption(f"{sens_label} — {sens_note}")
+
+    st.markdown("---")
     st.caption(f"🖥️ Device: `{str(device).upper()}`")
     st.caption("Model: ResNet18 + Fusion Head")
     st.caption("Dataset: Chest X-Ray (Kaggle)")
@@ -246,7 +389,7 @@ st.markdown("""
     <span style="font-size:2.5rem;">🫁</span>
     <div>
         <h1 style="font-size:1.6rem;margin:0;color:#ffffff;">MedXAI — Explainable Medical Image Classification</h1>
-        <p style="margin:2px 0 0 0;color:#666666;font-size:0.85rem;">
+        <p style="margin:2px 0 0 0;color:#5b9ec9;font-size:0.85rem;">
             Real-Time Grad-CAM · LIME · SHAP · E-Score &nbsp;|&nbsp; Pneumonia Detection from Chest X-Rays
         </p>
     </div>
@@ -272,7 +415,7 @@ if uploaded is None:
     st.markdown("""
     <div class="xai-card" style="margin-top:10px;">
         <div class="xai-card-title">📋 How to Use This Application</div>
-        <ol style="color:#212529;line-height:1.9;margin:0;padding-left:20px;">
+        <ol style="color:#1a3a52;line-height:1.9;margin:0;padding-left:20px;">
             <li><strong>Fill in Patient Information</strong> in the left sidebar</li>
             <li><strong>Upload a Chest X-Ray</strong> image above (JPG/PNG)</li>
             <li>The model will <strong>classify</strong> the image (Normal / Pneumonia)</li>
@@ -281,20 +424,6 @@ if uploaded is None:
             <li>Validate AI results using the <strong>clinical feedback checkboxes</strong></li>
             <li>Click <strong>Save & Submit</strong> to record the case</li>
         </ol>
-    </div>
-    <div class="xai-card" style="margin-top:10px;">
-        <div class="xai-card-title">🗂️ Recommended Kaggle Dataset</div>
-        <p style="color:#212529;line-height:1.7;margin:0;">
-            <strong>Dataset:</strong> Chest X-Ray Images (Pneumonia)<br>
-            <strong>URL:</strong> <code style="color:#1976d2;">https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia</code><br>
-            <strong>Classes:</strong> NORMAL (1,583 images) | PNEUMONIA (4,273 images)<br>
-            <strong>Format:</strong> JPEG, 3-channel RGB, variable resolution<br>
-            <strong>How to download:</strong><br>
-            1. Create a Kaggle account → Download <code>kaggle.json</code> API key<br>
-            2. Run: <code>kaggle datasets download paultimothymooney/chest-xray-pneumonia</code><br>
-            3. Unzip to <code>data/chest_xray/</code> in this project folder<br>
-            4. Train using: <code>python train.py</code>
-        </p>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
@@ -345,7 +474,7 @@ st.markdown(f"""
 
 if not quality_report.is_reliable:
     st.markdown("""
-    <div style="background:#ffebee;border:2px solid #d32f2f;border-radius:8px;
+    <div style="background:#fff0f0;border:2px solid #e53935;border-radius:8px;
                 padding:14px 18px;margin-bottom:12px;">
         <div style="color:#e74c3c;font-weight:700;font-size:1rem;margin-bottom:6px;">
             🚨 WARNING: AI Result May Be INCORRECT Due to Image Quality Issues
@@ -377,7 +506,7 @@ with issues_col:
     if not quality_report.issues:
         st.markdown("""
         <div style="padding:10px 14px;background:rgba(27,127,75,0.15);border-left:3px solid #28a745;
-                    border-radius:4px;color:#212529;">
+                    border-radius:4px;color:#1a3a52;">
             ✅ No issues detected. Image is clean and suitable for AI analysis.
         </div>
         """, unsafe_allow_html=True)
@@ -392,15 +521,15 @@ with issues_col:
             value_txt  = f"&nbsp; Measured: {issue.value:.2f}" if issue.value else ""
             st.markdown(f"""
             <div style="border-left:3px solid {c};padding:8px 12px;margin:5px 0;
-                        background:#f8f9fa;border-radius:4px;">
+                        background:#f0f8ff;border-radius:4px;">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;flex-wrap:wrap;">
                     <span>{ic}</span>
                     <span style="color:{c};font-weight:700;">{issue.issue_type}</span>
                     <span style="background:{c};color:white;font-size:0.72rem;padding:1px 8px;
                                  border-radius:10px;">{issue.severity}</span>
-                    <span style="color:#666666;font-size:0.78rem;font-family:monospace;">{region_txt}{value_txt}</span>
+                    <span style="color:#5b9ec9;font-size:0.78rem;font-family:monospace;">{region_txt}{value_txt}</span>
                 </div>
-                <div style="color:#666666;font-size:0.83rem;">{issue.description}</div>
+                <div style="color:#5b9ec9;font-size:0.83rem;">{issue.description}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -442,7 +571,7 @@ with col_info:
     st.markdown('<div class="section-header">🩺 Model Prediction</div>', unsafe_allow_html=True)
 
     with st.spinner("Running inference..."):
-        pred_class, confidence, label, all_probs = cached_prediction(model, img_tensor)
+        pred_class, confidence, label, all_probs = cached_prediction(model, img_tensor, threshold=pneumonia_threshold)
 
     badge_class = "pred-badge-pneumonia" if label == "Pneumonia" else "pred-badge-normal"
     icon = "⚠️" if label == "Pneumonia" else "✅"
@@ -457,13 +586,13 @@ with col_info:
     bars = ax_prob.barh(["Normal", "Pneumonia"], all_probs, color=colors, height=0.4)
     ax_prob.set_xlim(0, 1)
     ax_prob.set_facecolor("white")
-    ax_prob.tick_params(colors='#333333', labelsize=10)
+    ax_prob.tick_params(colors='#1a4a6e', labelsize=10)
     for spine in ax_prob.spines.values():
-        spine.set_edgecolor("#dddddd")
+        spine.set_edgecolor("#c8e6f8")
     for bar, prob in zip(bars, all_probs):
         ax_prob.text(bar.get_width() + 0.01, bar.get_y() + bar.get_height() / 2,
                      f"{prob:.3f}", va="center", ha="left", color="#333333", fontsize=10)
-    ax_prob.set_title("Class Probabilities", color="#555555", fontsize=10, pad=8)
+    ax_prob.set_title("Class Probabilities", color="#2c6e9e", fontsize=10, pad=8)
     plt.tight_layout()
     st.pyplot(fig_prob, clear_figure=True)
     plt.close(fig_prob)
@@ -472,8 +601,8 @@ with col_info:
     if patient_name or patient_id:
         st.markdown(f"""
         <div class="xai-card" style="padding:12px 16px;margin-top:4px;">
-            <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.85rem;color:#555555;">
-                <span>👤 <strong style='color:#212529'>{patient_name or "—"}</strong></span>
+            <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.85rem;color:#2c6e9e;">
+                <span>👤 <strong style='color:#1a3a52'>{patient_name or "—"}</strong></span>
                 <span>🆔 {patient_id or "—"}</span>
                 <span>🎂 {patient_age} yrs</span>
                 <span>⚧ {patient_sex}</span>
@@ -494,7 +623,7 @@ with tab_gradcam:
     st.markdown("""
     <div class="xai-card">
         <div class="xai-card-title">Gradient-weighted Class Activation Mapping (Grad-CAM)</div>
-        <p style="color:#555555;font-size:0.85rem;margin:0;">
+        <p style="color:#2c6e9e;font-size:0.85rem;margin:0;">
         Highlights the most discriminative regions of the X-ray for the model's decision.
         Red regions = high activation; Blue = low activation.
         </p>
@@ -516,7 +645,7 @@ with tab_lime:
     st.markdown("""
     <div class="xai-card">
         <div class="xai-card-title">Local Interpretable Model-agnostic Explanations (LIME)</div>
-        <p style="color:#555555;font-size:0.85rem;margin:0;">
+        <p style="color:#2c6e9e;font-size:0.85rem;margin:0;">
         Perturbs the input image and trains a local surrogate model to explain the prediction.
         Yellow boundaries = superpixels contributing most to the decision.
         </p>
@@ -538,7 +667,7 @@ with tab_shap:
     st.markdown("""
     <div class="xai-card">
         <div class="xai-card-title">SHapley Additive exPlanations (SHAP)</div>
-        <p style="color:#555555;font-size:0.85rem;margin:0;">
+        <p style="color:#2c6e9e;font-size:0.85rem;margin:0;">
         Uses game-theoretic Shapley values to attribute each pixel's contribution.
         Red pixels increase prediction confidence; Blue pixels decrease it.
         </p>
@@ -548,10 +677,9 @@ with tab_shap:
     with st.spinner("Computing SHAP values..."):
         progress_bar(prog_ph3, "Computing SHAP values...", steps=6, delay=0.15)
         try:
-            shap_fig, shap_score = cached_shap(model, img_tensor)
-            if shap_fig is not None:
-                st.pyplot(shap_fig, clear_figure=True)
-                plt.close(shap_fig)
+            shap_bytes, shap_score = cached_shap(model, img_tensor)
+            if shap_bytes is not None:
+                st.image(shap_bytes, use_container_width=True)
             st.markdown(f'<div class="score-chip">SHAP Mean Abs. Score: {shap_score:.4f}</div>', unsafe_allow_html=True)
         except Exception as e:
             st.error(f"SHAP failed: {e}")
@@ -584,10 +712,10 @@ with col_e4:
 st.markdown("""
 <div class="xai-card" style="margin-top:10px;">
     <div class="xai-card-title">E-Score Formula</div>
-    <code style="color:#1976d2;font-size:0.9rem;">
+    <code style="color:#0288d1;font-size:0.9rem;">
     E = 0.40 × Confidence + 0.30 × Focus Score + 0.30 × Gradient Score
     </code>
-    <p style="color:#555555;font-size:0.82rem;margin:8px 0 0 0;">
+    <p style="color:#2c6e9e;font-size:0.82rem;margin:8px 0 0 0;">
     Focus Score = inverse entropy of last-layer activations &nbsp;|&nbsp;
     Gradient Score = normalized L₂ norm of input gradients
     </p>
@@ -603,7 +731,7 @@ st.markdown('<div class="section-header">🔎 X-Ray Abnormality Detection & Anno
 st.markdown("""
 <div class="xai-card" style="margin-bottom:10px;">
     <div class="xai-card-title">AI-Annotated Chest X-Ray</div>
-    <p style="color:#555555;font-size:0.85rem;margin:0;">
+    <p style="color:#2c6e9e;font-size:0.85rem;margin:0;">
     Lung zones are automatically analysed using Grad-CAM activation maps.
     Abnormal regions are highlighted with coloured bounding boxes.
     <b style="color:#e74c3c;">Red = Severe</b> &nbsp;·&nbsp;
@@ -636,10 +764,10 @@ with ann_col2:
             c = colors_map.get(sev, "#6c757d")
             st.markdown(f"""
             <div style="border-left:3px solid {c};padding:6px 10px;margin:5px 0;
-                        background:#f8f9fa;border-radius:4px;">
+                        background:#f0f8ff;border-radius:4px;">
                 <span style="color:{c};font-weight:700;">{sev}</span>
-                <span style="color:#212529;font-size:0.9rem;"> — {f['zone']}</span><br>
-                <span style="color:#666666;font-size:0.8rem;font-family:monospace;">
+                <span style="color:#1a3a52;font-size:0.9rem;"> — {f['zone']}</span><br>
+                <span style="color:#5b9ec9;font-size:0.8rem;font-family:monospace;">
                 Max activation: {f['activation']:.4f} | Mean: {f['mean_act']:.4f}
                 </span>
             </div>
@@ -647,9 +775,9 @@ with ann_col2:
     else:
         if label == "Normal":
             st.markdown("""
-            <div style="border-left:3px solid #28a745;padding:10px;background:#f8f9fa;border-radius:4px;">
+            <div style="border-left:3px solid #28a745;padding:10px;background:#f0f8ff;border-radius:4px;">
                 <span style="color:#27ae60;font-weight:700;">✅ No abnormalities detected</span><br>
-                <span style="color:#555555;font-size:0.85rem;">Lung fields appear clear in all zones.</span>
+                <span style="color:#2c6e9e;font-size:0.85rem;">Lung fields appear clear in all zones.</span>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -658,11 +786,11 @@ with ann_col2:
     # Dominant severity for treatment
     dominant_severity = get_dominant_severity(findings) if findings else ("Moderate" if label == "Pneumonia" else "Normal")
     st.markdown(f"""
-    <div style="margin-top:12px;padding:8px 12px;background:#e9ecef;border-radius:8px;border:1px solid #dee2e6;">
-        <span style="color:#555555;font-size:0.82rem;">Dominant Severity:</span>
-        <span style="font-weight:700;margin-left:8px;color:#1976d2;">{dominant_severity}</span>
-        <span style="color:#555555;font-size:0.82rem;margin-left:16px;">Zones flagged:</span>
-        <span style="font-weight:700;margin-left:8px;color:#1976d2;">{len(findings)}/6</span>
+    <div style="margin-top:12px;padding:8px 12px;background:#e1f3fc;border-radius:8px;border:1px solid #c8e6f8;">
+        <span style="color:#2c6e9e;font-size:0.82rem;">Dominant Severity:</span>
+        <span style="font-weight:700;margin-left:8px;color:#0288d1;">{dominant_severity}</span>
+        <span style="color:#2c6e9e;font-size:0.82rem;margin-left:16px;">Zones flagged:</span>
+        <span style="font-weight:700;margin-left:8px;color:#0288d1;">{len(findings)}/6</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -696,10 +824,10 @@ with tx_tab1:
         priority_color = "#e74c3c" if "URGENT" in action.upper() or "ICU" in action.upper() else "#5cb8f0"
         st.markdown(f"""
         <div style="display:flex;align-items:flex-start;gap:8px;margin:6px 0;
-                    padding:8px 12px;background:#f8f9fa;border-radius:6px;
+                    padding:8px 12px;background:#f0f8ff;border-radius:6px;
                     border-left:3px solid {priority_color};">
             <span style="color:{priority_color};">▶</span>
-            <span style="color:#212529;font-size:0.9rem;">{action}</span>
+            <span style="color:#1a3a52;font-size:0.9rem;">{action}</span>
         </div>
         """, unsafe_allow_html=True)
 
@@ -709,10 +837,10 @@ with tx_tab2:
         st.markdown(f"""
         <div class="xai-card" style="padding:10px 14px;margin:6px 0;">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-                <span style="color:#1976d2;font-weight:700;font-size:0.95rem;">💊 {med['name']}</span>
-                <span style="background:#e9ecef;padding:3px 10px;border-radius:12px;
-                             color:#1565c0;font-family:monospace;font-size:0.82rem;">{med['dose']}</span>
-                <span style="color:#666666;font-size:0.82rem;">⏱ {med['duration']}</span>
+                <span style="color:#0288d1;font-weight:700;font-size:0.95rem;">💊 {med['name']}</span>
+                <span style="background:#e1f3fc;padding:3px 10px;border-radius:12px;
+                             color:#0277bd;font-family:monospace;font-size:0.82rem;">{med['dose']}</span>
+                <span style="color:#5b9ec9;font-size:0.82rem;">⏱ {med['duration']}</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -733,8 +861,8 @@ with tx_tab4:
     st.markdown("#### Lifestyle & Supportive Care")
     for item in treatment_plan.lifestyle:
         st.markdown(f"""
-        <div style="padding:6px 12px;margin:4px 0;background:#e8f5e9;
-                    border-left:2px solid #2e7d32;border-radius:4px;color:#212529;font-size:0.88rem;">
+        <div style="padding:6px 12px;margin:4px 0;background:#f0fff4;
+                    border-left:2px solid #43a047;border-radius:4px;color:#1a3a52;font-size:0.88rem;">
             🌿 {item}
         </div>
         """, unsafe_allow_html=True)
@@ -749,8 +877,8 @@ with tx_tab5:
         st.markdown("#### 🚨 Red Flags — Escalate Immediately")
         for item in treatment_plan.red_flags:
             st.markdown(f"""
-            <div style="padding:5px 10px;margin:4px 0;background:#ffebee;
-                        border-left:2px solid #d32f2f;border-radius:4px;
+            <div style="padding:5px 10px;margin:4px 0;background:#fff0f0;
+                        border-left:2px solid #e53935;border-radius:4px;
                         color:#b71c1c;font-size:0.85rem;">
                 ⚠️ {item}
             </div>
@@ -783,7 +911,7 @@ st.markdown('<div class="section-header">✅ Clinical Validation Checklist</div>
 st.markdown("""
 <div class="xai-card" style="margin-bottom:12px;">
     <div class="xai-card-title">Radiologist / Clinician Review</div>
-    <p style="color:#555555;font-size:0.85rem;margin:0;">
+    <p style="color:#2c6e9e;font-size:0.85rem;margin:0;">
     Review the AI-generated explanations and confirm whether they align with clinical knowledge.
     </p>
 </div>
@@ -893,7 +1021,7 @@ if gen_pdf_btn:
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown("""
-<div style="text-align:center;color:#666666;font-size:0.78rem;padding:8px 0;">
+<div style="text-align:center;color:#5b9ec9;font-size:0.78rem;padding:8px 0;">
     MedXAI — MSc/PhD Research Project &nbsp;·&nbsp;
     ResNet18 · Grad-CAM · LIME · SHAP · E-Score · PDF Reports &nbsp;·&nbsp;
     Dataset: Chest X-Ray Pneumonia (Kaggle) &nbsp;·&nbsp;
