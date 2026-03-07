@@ -81,16 +81,16 @@ st.markdown("""
         background-color: #ffffff !important;
     }
 
-    /* SIDEBAR — white with sky blue right border */
+    /* SIDEBAR — light sky blue */
     section[data-testid="stSidebar"],
     section[data-testid="stSidebar"] > div {
-        background-color: #ffffff !important;
-        border-right: 2px solid #29b6f6 !important;
+        background-color: #e1f5fe !important;
+        border-right: 1px solid #29b6f6 !important;
     }
     section[data-testid="stSidebar"] label,
     section[data-testid="stSidebar"] p,
     section[data-testid="stSidebar"] span {
-        color: #0277bd !important;
+        color: #01579b !important;
         font-weight: 500 !important;
     }
 
@@ -107,7 +107,7 @@ st.markdown("""
         background-color: #0288d1 !important;
     }
 
-    /* FILE UPLOADER — white box, sky blue dashed border */
+    /* FILE UPLOADER — white, sky blue dashed border */
     [data-testid="stFileUploader"],
     [data-testid="stFileUploader"] > div,
     [data-testid="stFileUploader"] section,
@@ -131,7 +131,7 @@ st.markdown("""
         color: #0277bd !important;
     }
 
-    /* TABS — sky blue active, white inactive */
+    /* TABS */
     .stTabs [data-baseweb="tab-list"] {
         background-color: #e1f5fe !important;
         border-radius: 8px;
@@ -149,7 +149,7 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
-    /* INPUTS — white with sky blue border */
+    /* INPUTS */
     input, textarea, select {
         background-color: #ffffff !important;
         border: 1.5px solid #29b6f6 !important;
@@ -170,11 +170,11 @@ st.markdown("""
 
     /* METRICS */
     [data-testid="stMetricValue"] {
-        color: #0288d1 !important;
+        color: #29b6f6 !important;
         font-weight: 700 !important;
     }
     [data-testid="stMetricLabel"] {
-        color: #29b6f6 !important;
+        color: #0277bd !important;
     }
 
     /* EXPANDER */
@@ -187,7 +187,7 @@ st.markdown("""
     }
 
     /* TEXT */
-    p, li, h1, h2, h3, h4, label, span {
+    p, li, h1, h2, h3, h4, label {
         color: #01579b !important;
     }
     .stMarkdown p { color: #01579b !important; }
@@ -203,7 +203,7 @@ st.markdown("""
         border-radius: 8px;
         padding: 14px 18px;
         margin: 8px 0;
-        box-shadow: 0 1px 6px rgba(41,182,246,0.12);
+        box-shadow: 0 1px 6px rgba(41,182,246,0.10);
     }
     .xai-card-title {
         font-size: 0.92rem;
