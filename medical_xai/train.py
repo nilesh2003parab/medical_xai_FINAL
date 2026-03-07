@@ -1,25 +1,4 @@
-"""
-Training script for Pneumonia classification (ResNet18 FusionModel).
 
-Dataset: Chest X-Ray Images (Pneumonia)
-https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia
-
-Expected folder structure after unzipping:
-    data/chest_xray/
-        train/
-            NORMAL/   *.jpeg
-            PNEUMONIA/ *.jpeg
-        val/
-            NORMAL/
-            PNEUMONIA/
-        test/
-            NORMAL/
-            PNEUMONIA/
-
-Usage:
-    python train.py
-    python train.py --epochs 20 --lr 0.0001 --batch_size 32
-"""
 
 import argparse
 import os
