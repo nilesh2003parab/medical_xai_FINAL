@@ -24,6 +24,9 @@ Also produces an annotated PIL image showing all detected issues.
 
 import numpy as np
 import cv2
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
@@ -489,12 +492,13 @@ def annotate_quality_issues(
 # QUALITY GAUGE — returns matplotlib figure
 # ─────────────────────────────────────────────────────────────────────────────
 
-def quality_gauge_figure(score: float) -> "plt.Figure":
+def quality_gauge_figure(score: float):
     """Return a matplotlib gauge-style chart for the quality score."""
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
     from matplotlib.patches import FancyArrowPatch
 
+    import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(5, 2.8), facecolor="#0d1b2a")
     ax.set_facecolor("#0d1b2a")
     ax.set_xlim(0, 10)

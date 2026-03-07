@@ -11,6 +11,10 @@ Returns:
 
 import numpy as np
 import cv2
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 from PIL import Image, ImageDraw, ImageFont
 import torch
 import torch.nn.functional as F
@@ -180,6 +184,7 @@ def annotate_xray(
 
     # ── Draw CAM heatmap as faint overlay ────────────────────────────────
     import matplotlib.cm as cm
+    import matplotlib.pyplot as plt
     colormap  = plt.colormaps.get_cmap("Reds")
     heat_rgba = (colormap(cam_full) * 255).astype(np.uint8)
     heat_rgba[:, :, 3] = (cam_full * 90).astype(np.uint8)  # Alpha from activation

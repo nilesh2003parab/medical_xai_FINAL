@@ -93,14 +93,14 @@ def run_lime(model, image_np, transform, num_samples=50, num_features=10, positi
         mask   = segments == seg_id
         norm_w = weight / (max_abs + 1e-8)   # -1 to +1
 
-        if norm_w > 0.08:
+        if norm_w > 0.15:
             # Green — supports Pneumonia prediction
             intensity = min(norm_w, 1.0)
-            overlay[mask] = [0.05, 0.80, 0.20, intensity * 0.70]
-        elif norm_w < -0.08:
+            overlay[mask] = [0.05, 0.80, 0.20, intensity * 0.45]
+        elif norm_w < -0.15:
             # Red — against Pneumonia (Normal evidence)
             intensity = min(abs(norm_w), 1.0)
-            overlay[mask] = [0.90, 0.10, 0.10, intensity * 0.70]
+            overlay[mask] = [0.90, 0.10, 0.10, intensity * 0.45]
 
     # X-ray as float RGB
     xray_f = image_np.astype(np.float32) / 255.0
@@ -119,14 +119,14 @@ def run_lime(model, image_np, transform, num_samples=50, num_features=10, positi
 
     axes[0].imshow(xray_f)
     axes[0].set_title("Original X-ray", fontsize=12,
-                       fontweight="bold", color="#1a3a52", pad=10)
+                       fontweight="bold", color="#01579b", pad=10)
     axes[0].axis("off")
 
     axes[1].imshow(blended_bounds)
     axes[1].set_title(
         f"LIME Superpixel Explanation  (score={lime_score:.3f})\n"
         "Green = Supports Pneumonia  |  Red = Normal / Against",
-        fontsize=10, fontweight="bold", color="#1a3a52", pad=10
+        fontsize=10, fontweight="bold", color="#01579b", pad=10
     )
     axes[1].axis("off")
 
@@ -136,7 +136,7 @@ def run_lime(model, image_np, transform, num_samples=50, num_features=10, positi
                                 label="Normal / Against detection")
     axes[1].legend(handles=[pos_patch, neg_patch], loc="lower right",
                    fontsize=9, facecolor="white", edgecolor="#c8e6f8",
-                   labelcolor="#1a3a52", framealpha=0.9)
+                   labelcolor="#01579b", framealpha=0.9)
 
     plt.suptitle(
         f"LIME Explanation  |  Top {num_features} contributing regions shown",
