@@ -281,14 +281,14 @@ def load_model():
     if weights_path.exists():
         try:
             state_dict = torch.load(str(weights_path), map_location=device)
-            # Filter out final FC keys (shape mismatch due to fine-tuned head)
-            cnn_keys = {k.replace("cnn.", ""): v for k, v in state_dict.items() if k.startswith("cnn.")}
-            if cnn_keys:
-                m.cnn.load_state_dict(cnn_keys, strict=False)
-            else:
-                m.load_state_dict(state_dict, strict=False)
+            # Load ALL weights — full model including classifier head
+            m.load_state_dict(state_dict, strict=True)
         except Exception as err:
-            st.warning(f"⚠️ Custom weights not loaded — using ImageNet pretrained: {err}")
+            try:
+                # Fallback: load with strict=False if minor mismatch
+                m.load_state_dict(state_dict, strict=False)
+            except Exception as err2:
+                st.warning(f"⚠️ Weights not loaded: {err2}")
     m.eval()
     return m
 
