@@ -277,8 +277,26 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 @st.cache_resource(show_spinner=False)
 def load_model():
     m = FusionModel().to(device)
-    weights_path = Path("weights/resnet18_pneumonia_classifier.pth")
-    if weights_path.exists():
+    # Find weights — check multiple possible paths
+    import os
+    cwd = os.getcwd()
+    script_dir = Path(__file__).parent
+
+    # Try all possible locations
+    possible_paths = [
+        script_dir / "weights" / "resnet18_pneumonia_classifier.pth",
+        Path("weights/resnet18_pneumonia_classifier.pth"),
+        Path(cwd) / "weights" / "resnet18_pneumonia_classifier.pth",
+        script_dir.parent / "medical_xai" / "weights" / "resnet18_pneumonia_classifier.pth",
+    ]
+
+    weights_path = None
+    for p in possible_paths:
+        if p.exists():
+            weights_path = p
+            break
+
+    if weights_path is not None:
         try:
             state_dict = torch.load(str(weights_path), map_location=device)
             # Load ALL weights — full model including classifier head
@@ -612,7 +630,15 @@ with col_info:
 
     # ── Warn user if no trained weights loaded ────────────────────────────
     import os
-    weights_exist = os.path.exists("weights/resnet18_pneumonia_classifier.pth")
+    # Check weights using same multi-path logic as load_model()
+    import pathlib
+    _script_dir = pathlib.Path(__file__).parent
+    _possible = [
+        _script_dir / "weights" / "resnet18_pneumonia_classifier.pth",
+        pathlib.Path("weights/resnet18_pneumonia_classifier.pth"),
+        pathlib.Path(os.getcwd()) / "weights" / "resnet18_pneumonia_classifier.pth",
+    ]
+    weights_exist = any(p.exists() for p in _possible)
     if not weights_exist:
         st.warning(
             "⚠️ **No trained weights found.** The model is using ImageNet pre-trained weights only "
