@@ -1,6 +1,7 @@
 """
 Grad-CAM (Gradient-weighted Class Activation Mapping) for ResNet18.
 Reference: Selvaraju et al., 2017
+Uses multiple layers for better coverage of lung regions.
 """
 
 import numpy as np
@@ -31,10 +32,30 @@ class GradCAMHook:
         self._bwd_hook.remove()
 
 
-def generate_gradcam(model, img_tensor, original_image, target_class=None, alpha=0.50):
+def _compute_cam(hook, orig_w, orig_h):
+    """Compute normalised CAM from hook activations and gradients."""
+    grads = hook.gradients   # [1, C, H, W]
+    acts  = hook.activations # [1, C, H, W]
+
+    # Grad-CAM weights = global average pooled gradients
+    weights = grads.mean(dim=(2, 3), keepdim=True)
+    cam     = F.relu((weights * acts).sum(dim=1, keepdim=True))
+    cam_np  = cam.squeeze().cpu().numpy()
+
+    if cam_np.max() > 0:
+        cam_np = cam_np / cam_np.max()
+
+    # Resize to image dimensions
+    cam_r = cv2.resize(cam_np, (orig_w, orig_h), interpolation=cv2.INTER_CUBIC)
+    return cam_r
+
+
+def generate_gradcam(model, img_tensor, original_image, target_class=None, alpha=0.55):
     model.eval()
-    target_layer = model.cnn.layer4[-1]
-    hook = GradCAMHook(target_layer)
+
+    # Hook BOTH layer3 and layer4 — combine for better lung coverage
+    hook3 = GradCAMHook(model.cnn.layer3[-1])
+    hook4 = GradCAMHook(model.cnn.layer4[-1])
 
     img_tensor = img_tensor.clone().requires_grad_(True)
     logits = model(img_tensor)
@@ -48,44 +69,52 @@ def generate_gradcam(model, img_tensor, original_image, target_class=None, alpha
     model.zero_grad()
     logits[0, target_class].backward()
 
-    grads   = hook.gradients
-    acts    = hook.activations
-    hook.remove()
-
-    weights = grads.mean(dim=(2, 3), keepdim=True)
-    cam     = F.relu((weights * acts).sum(dim=1, keepdim=True))
-
-    cam_np = cam.squeeze().cpu().numpy()
-    if cam_np.max() > 0:
-        cam_np = cam_np / cam_np.max()
-
     orig_w, orig_h = original_image.size
-    cam_resized = cv2.resize(cam_np, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
 
-    # Smooth for cleaner look
-    cam_resized = cv2.GaussianBlur(cam_resized, (11, 11), 0)
-    if cam_resized.max() > 0:
-        cam_resized = cam_resized / cam_resized.max()
+    cam3 = _compute_cam(hook3, orig_w, orig_h)
+    cam4 = _compute_cam(hook4, orig_w, orig_h)
+    hook3.remove()
+    hook4.remove()
 
+    # Combine: layer4 = fine details, layer3 = broader regions
+    cam_combined = 0.4 * cam3 + 0.6 * cam4
+
+    # Normalise combined map
+    if cam_combined.max() > 0:
+        cam_combined = cam_combined / cam_combined.max()
+
+    # Smooth — larger kernel for cleaner lung-region heatmap
+    cam_smooth = cv2.GaussianBlur(cam_combined, (21, 21), 0)
+    if cam_smooth.max() > 0:
+        cam_smooth = cam_smooth / cam_smooth.max()
+
+    # Apply power to sharpen contrast (0.7 = mild boost to bright areas)
+    cam_final = np.power(cam_smooth, 0.7)
+
+    # Build heatmap overlay
     import matplotlib.pyplot as plt
     colormap   = plt.colormaps.get_cmap("jet")
-    heatmap_np = (colormap(cam_resized)[:, :, :3] * 255).astype(np.uint8)
+    heatmap_np = (colormap(cam_final)[:, :, :3] * 255).astype(np.uint8)
 
-    orig_np = np.array(original_image.convert("RGB")).astype(np.float32)
-    heat_np = heatmap_np.astype(np.float32)
-    overlay = np.clip((1 - alpha) * orig_np + alpha * heat_np, 0, 255).astype(np.uint8)
+    orig_np  = np.array(original_image.convert("RGB")).astype(np.float32)
+    heat_np  = heatmap_np.astype(np.float32)
+    overlay  = np.clip((1 - alpha) * orig_np + alpha * heat_np, 0, 255).astype(np.uint8)
 
-    # ── Plot — clean white background ────────────────────────────────────
+    # ── Plot ──────────────────────────────────────────────────────────────
     fig, axes = plt.subplots(1, 2, figsize=(11, 5), facecolor="white")
     fig.patch.set_facecolor("white")
 
     axes[0].imshow(np.array(original_image.convert("RGB")), cmap="gray")
-    axes[0].set_title("Original X-ray", color="#01579b", fontsize=12, fontweight="bold", pad=10)
+    axes[0].set_title("Original X-ray", color="#01579b",
+                       fontsize=12, fontweight="bold", pad=10)
     axes[0].axis("off")
 
     axes[1].imshow(overlay)
-    axes[1].set_title(f"Grad-CAM Heatmap  (score={score_val:.3f})\nRed = High activation  |  Blue = Low activation",
-                      color="#01579b", fontsize=11, fontweight="bold", pad=10)
+    axes[1].set_title(
+        f"Grad-CAM Heatmap  (score={score_val:.3f})\n"
+        "Red = High activation  |  Blue = Low activation",
+        color="#01579b", fontsize=11, fontweight="bold", pad=10
+    )
     axes[1].axis("off")
 
     sm = plt.cm.ScalarMappable(cmap="jet", norm=plt.Normalize(0, 1))
