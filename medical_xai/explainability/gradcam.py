@@ -1,6 +1,5 @@
 """
-Grad-CAM for ResNet18 — with chest region masking.
-Forces heatmap to focus on the central lung area only.
+Grad-CAM for ResNet18 — lightweight with simple chest region masking.
 """
 
 import numpy as np
@@ -31,43 +30,11 @@ class GradCAMHook:
         self._bwd_hook.remove()
 
 
-def _chest_mask(h, w):
-    """
-    Create a soft mask that keeps only the central chest/lung region.
-    Removes corners and borders where non-lung artifacts appear.
-    Top 10%, bottom 15%, left 8%, right 8% are suppressed.
-    """
-    mask = np.ones((h, w), dtype=np.float32)
-
-    # Suppress top border (shoulders/neck area above lungs)
-    top_cut    = int(h * 0.10)
-    # Suppress bottom border (below diaphragm)
-    bottom_cut = int(h * 0.15)
-    # Suppress left/right borders
-    side_cut   = int(w * 0.08)
-
-    # Zero out borders
-    mask[:top_cut, :]    = 0.0
-    mask[h-bottom_cut:, :] = 0.0
-    mask[:, :side_cut]   = 0.0
-    mask[:, w-side_cut:] = 0.0
-
-    # Soft gradient at the edges using distance transform
-    mask_uint8 = (mask * 255).astype(np.uint8)
-    dist = cv2.distanceTransform(mask_uint8, cv2.DIST_L2, 5)
-    if dist.max() > 0:
-        dist = dist / dist.max()
-    # Soften with power — gentle falloff from centre
-    soft_mask = np.power(dist, 0.3)
-
-    return soft_mask
-
-
 def generate_gradcam(model, img_tensor, original_image, target_class=None, alpha=0.55):
     model.eval()
 
-    # Use layer3 only — larger spatial resolution (14x14) = better lung coverage
-    hook = GradCAMHook(model.cnn.layer3[-1])
+    # layer4 — standard Grad-CAM target
+    hook = GradCAMHook(model.cnn.layer4[-1])
 
     img_tensor = img_tensor.clone().requires_grad_(True)
     logits = model(img_tensor)
@@ -85,42 +52,44 @@ def generate_gradcam(model, img_tensor, original_image, target_class=None, alpha
     acts  = hook.activations
     hook.remove()
 
-    # Grad-CAM formula
     weights = grads.mean(dim=(2, 3), keepdim=True)
     cam     = F.relu((weights * acts).sum(dim=1, keepdim=True))
     cam_np  = cam.squeeze().cpu().numpy()
 
     orig_w, orig_h = original_image.size
 
-    # Resize CAM to image size
+    # Resize
     cam_r = cv2.resize(cam_np, (orig_w, orig_h), interpolation=cv2.INTER_CUBIC)
 
-    # ── Apply chest mask — suppress corners and borders ──────────────────
-    chest_mask = _chest_mask(orig_h, orig_w)
-    cam_masked = cam_r * chest_mask
+    # Simple chest mask — zero out borders using numpy slicing (no distanceTransform)
+    h, w = cam_r.shape
+    t = int(h * 0.10)   # top 10%
+    b = int(h * 0.12)   # bottom 12%
+    s = int(w * 0.07)   # sides 7%
+    cam_r[:t, :]    = 0
+    cam_r[h-b:, :]  = 0
+    cam_r[:, :s]    = 0
+    cam_r[:, w-s:]  = 0
 
-    # Normalise after masking
-    if cam_masked.max() > 0:
-        cam_masked = cam_masked / cam_masked.max()
+    # Normalise
+    if cam_r.max() > 0:
+        cam_r = cam_r / cam_r.max()
 
     # Smooth
-    cam_smooth = cv2.GaussianBlur(cam_masked, (25, 25), 0)
-    if cam_smooth.max() > 0:
-        cam_smooth = cam_smooth / cam_smooth.max()
-
-    # Sharpen contrast
-    cam_final = np.power(cam_smooth, 0.6)
+    cam_r = cv2.GaussianBlur(cam_r, (15, 15), 0)
+    if cam_r.max() > 0:
+        cam_r = cam_r / cam_r.max()
 
     # Build overlay
     import matplotlib.pyplot as plt
     colormap   = plt.colormaps.get_cmap("jet")
-    heatmap_np = (colormap(cam_final)[:, :, :3] * 255).astype(np.uint8)
+    heatmap_np = (colormap(cam_r)[:, :, :3] * 255).astype(np.uint8)
 
     orig_np = np.array(original_image.convert("RGB")).astype(np.float32)
     heat_np = heatmap_np.astype(np.float32)
     overlay = np.clip((1 - alpha) * orig_np + alpha * heat_np, 0, 255).astype(np.uint8)
 
-    # ── Plot ──────────────────────────────────────────────────────────────
+    # Plot
     fig, axes = plt.subplots(1, 2, figsize=(11, 5), facecolor="white")
     fig.patch.set_facecolor("white")
 
