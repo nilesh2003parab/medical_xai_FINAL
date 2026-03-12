@@ -1039,55 +1039,6 @@ with save_col:
 with pdf_col:
     gen_pdf_btn = st.button("📄 Generate PDF Report", use_container_width=True)
 
-# ── Download Records Section ──────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("#### 📥 Download Patient Records")
-st.caption("⚠️ Records are stored temporarily on the server. Download your CSV files before closing the session to keep them permanently.")
-
-dl_col1, dl_col2 = st.columns(2)
-
-with dl_col1:
-    patient_csv_path = "records/patient_records.csv"
-    if os.path.exists(patient_csv_path):
-        with open(patient_csv_path, "rb") as f:
-            csv_bytes = f.read()
-        st.download_button(
-            label="📋 Download Patient Records CSV",
-            data=csv_bytes,
-            file_name=f"patient_records_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-            use_container_width=True,
-            help="Contains: Patient ID, Name, Age, Sex, Prediction, Confidence, E-Score, Severity"
-        )
-        try:
-            row_count = sum(1 for _ in open(patient_csv_path))
-            st.caption(f"📊 {row_count} patient record(s) saved this session")
-        except:
-            pass
-    else:
-        st.info("No patient records yet. Save an analysis first.", icon="ℹ️")
-
-with dl_col2:
-    feedback_csv_path = "records/validation_feedback.csv"
-    if os.path.exists(feedback_csv_path):
-        with open(feedback_csv_path, "rb") as f:
-            fb_bytes = f.read()
-        st.download_button(
-            label="🩺 Download Clinician Feedback CSV",
-            data=fb_bytes,
-            file_name=f"clinician_feedback_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-            use_container_width=True,
-            help="Contains: Timestamp, Patient ID, Prediction, Validation checkboxes, Clinician notes"
-        )
-        try:
-            fb_count = sum(1 for _ in open(feedback_csv_path))
-            st.caption(f"📊 {fb_count} feedback record(s) saved this session")
-        except:
-            pass
-    else:
-        st.info("No feedback records yet. Save an analysis first.", icon="ℹ️")
-
 if save_btn:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     os.makedirs("records", exist_ok=True)
@@ -1233,6 +1184,96 @@ if gen_pdf_btn:
         except Exception as e:
             st.error(f"PDF generation failed: {e}")
             st.info("Make sure `reportlab` is installed: `pip install reportlab`")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PATIENT RECORDS VIEWER
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown("## 🗄️ Patient Records Database")
+
+view_tab1, view_tab2, view_tab3, view_tab4 = st.tabs([
+    "👥 Patient Records", "📊 XAI Scores", "🫁 Zone Findings", "🩺 Clinician Feedback"
+])
+
+def load_table(table_name, order_col="timestamp"):
+    if supabase_client:
+        try:
+            res = supabase_client.table(table_name).select("*").order(order_col, desc=True).limit(100).execute()
+            if res.data:
+                import pandas as pd
+                return pd.DataFrame(res.data)
+        except Exception as e:
+            st.error(f"Could not load {table_name}: {e}")
+    return None
+
+with view_tab1:
+    df = load_table("patient_records")
+    if df is not None:
+        # Summary stats
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Patients", len(df))
+        c2.metric("Pneumonia Cases", int((df["prediction"] == "Pneumonia").sum()))
+        c3.metric("Normal Cases",    int((df["prediction"] == "Normal").sum()))
+        c4.metric("Avg Confidence",  f"{df['confidence'].mean():.1%}" if "confidence" in df.columns else "—")
+        st.dataframe(
+            df[["timestamp","patient_id","patient_name","age","sex","prediction","confidence","severity","escore","zones_flagged"]],
+            use_container_width=True, hide_index=True
+        )
+        # Download button
+        csv_data = df.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download Patient Records CSV", csv_data,
+                           f"patient_records_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+    else:
+        st.info("No patient records found. Save an analysis to see data here.", icon="ℹ️")
+
+with view_tab2:
+    df2 = load_table("xai_scores")
+    if df2 is not None:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Records",   len(df2))
+        c2.metric("Avg Grad-CAM",    f"{df2['gradcam_score'].mean():.3f}" if "gradcam_score" in df2.columns else "—")
+        c3.metric("Avg LIME",        f"{df2['lime_score'].mean():.3f}"    if "lime_score"    in df2.columns else "—")
+        c4.metric("Avg E-Score",     f"{df2['escore'].mean():.3f}"        if "escore"        in df2.columns else "—")
+        st.dataframe(df2, use_container_width=True, hide_index=True)
+        csv_data2 = df2.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download XAI Scores CSV", csv_data2,
+                           f"xai_scores_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+    else:
+        st.info("No XAI score records found yet.", icon="ℹ️")
+
+with view_tab3:
+    df3 = load_table("zone_findings")
+    if df3 is not None:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Findings", len(df3))
+        if "severity" in df3.columns:
+            c2.metric("Severe Zones",   int((df3["severity"] == "Severe").sum()))
+            c3.metric("Moderate Zones", int((df3["severity"] == "Moderate").sum()))
+        st.dataframe(df3, use_container_width=True, hide_index=True)
+        csv_data3 = df3.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download Zone Findings CSV", csv_data3,
+                           f"zone_findings_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+    else:
+        st.info("No zone findings found yet.", icon="ℹ️")
+
+with view_tab4:
+    df4 = load_table("clinician_feedback")
+    if df4 is not None:
+        st.metric("Total Feedback Records", len(df4))
+        bool_cols = ["finding_correct","heatmap_accurate","would_use_clinically",
+                     "agrees_with_severity","report_useful","overall_helpful"]
+        existing = [c for c in bool_cols if c in df4.columns]
+        if existing:
+            agree_rates = df4[existing].mean() * 100
+            cols = st.columns(len(existing))
+            for i, col_name in enumerate(existing):
+                cols[i].metric(col_name.replace("_", " ").title(), f"{agree_rates[col_name]:.0f}%")
+        st.dataframe(df4, use_container_width=True, hide_index=True)
+        csv_data4 = df4.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download Feedback CSV", csv_data4,
+                           f"clinician_feedback_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+    else:
+        st.info("No clinician feedback found yet.", icon="ℹ️")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FOOTER
