@@ -1018,6 +1018,55 @@ with save_col:
 with pdf_col:
     gen_pdf_btn = st.button("📄 Generate PDF Report", use_container_width=True)
 
+# ── Download Records Section ──────────────────────────────────────────────────
+st.markdown("---")
+st.markdown("#### 📥 Download Patient Records")
+st.caption("⚠️ Records are stored temporarily on the server. Download your CSV files before closing the session to keep them permanently.")
+
+dl_col1, dl_col2 = st.columns(2)
+
+with dl_col1:
+    patient_csv_path = "records/patient_records.csv"
+    if os.path.exists(patient_csv_path):
+        with open(patient_csv_path, "rb") as f:
+            csv_bytes = f.read()
+        st.download_button(
+            label="📋 Download Patient Records CSV",
+            data=csv_bytes,
+            file_name=f"patient_records_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            help="Contains: Patient ID, Name, Age, Sex, Prediction, Confidence, E-Score, Severity"
+        )
+        try:
+            row_count = sum(1 for _ in open(patient_csv_path))
+            st.caption(f"📊 {row_count} patient record(s) saved this session")
+        except:
+            pass
+    else:
+        st.info("No patient records yet. Save an analysis first.", icon="ℹ️")
+
+with dl_col2:
+    feedback_csv_path = "records/validation_feedback.csv"
+    if os.path.exists(feedback_csv_path):
+        with open(feedback_csv_path, "rb") as f:
+            fb_bytes = f.read()
+        st.download_button(
+            label="🩺 Download Clinician Feedback CSV",
+            data=fb_bytes,
+            file_name=f"clinician_feedback_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            help="Contains: Timestamp, Patient ID, Prediction, Validation checkboxes, Clinician notes"
+        )
+        try:
+            fb_count = sum(1 for _ in open(feedback_csv_path))
+            st.caption(f"📊 {fb_count} feedback record(s) saved this session")
+        except:
+            pass
+    else:
+        st.info("No feedback records yet. Save an analysis first.", icon="ℹ️")
+
 if save_btn:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     os.makedirs("records", exist_ok=True)
