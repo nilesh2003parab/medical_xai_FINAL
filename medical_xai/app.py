@@ -1235,9 +1235,6 @@ else:
     st.success("✅ Admin access granted — viewing confidential patient records.")
 
 if st.session_state.admin_logged_in:
-    admin_input = ADMIN_PASSWORD  # keep rest of code working
-else:
-    admin_input = ""
 
     def load_table(table_name, order_col="timestamp"):
         if supabase_client:
