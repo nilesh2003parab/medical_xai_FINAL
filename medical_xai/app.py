@@ -11,6 +11,11 @@ Supported Kaggle Dataset:
 # ── Standard Library ──────────────────────────────────────────────────────────
 import csv
 import os
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except Exception:
+    SUPABASE_AVAILABLE = False
 import sys
 import time
 import traceback
@@ -28,6 +33,22 @@ import matplotlib.pyplot as plt
 
 # ── Streamlit (imported early so we can show errors on screen) ────────────────
 import streamlit as st
+
+# ── Supabase connection ────────────────────────────────────────────────────────
+SUPABASE_URL = "https://ovwalzmmbugfnfispxqj.supabase.co"
+SUPABASE_KEY = "sb_publishable_FMV-qJF_RTCRDpDU_OVPlg_U5nN3Fkc"
+
+@st.cache_resource(show_spinner=False)
+def get_supabase():
+    if SUPABASE_AVAILABLE:
+        try:
+            return create_client(SUPABASE_URL, SUPABASE_KEY)
+        except Exception:
+            return None
+    return None
+
+supabase_client = get_supabase()
+
 
 # ── Remaining third-party ─────────────────────────────────────────────────────
 try:
@@ -1070,28 +1091,102 @@ with dl_col2:
 if save_btn:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     os.makedirs("records", exist_ok=True)
+    db_ok = False
 
-    record_row = [
-        timestamp, patient_id, patient_name, patient_age, patient_sex,
-        ward, disease_present, major_surgeries,
-        diabetes, bp, thyroid, cholesterol, asthma, copd,
-        uploaded.name, label, f"{confidence:.4f}", f"{escore_value:.4f}",
-        dominant_severity, len(findings),
-    ]
-    with open("records/patient_records.csv", "a", newline="") as f:
-        csv.writer(f).writerow(record_row)
+    # ── Save to Supabase ───────────────────────────────────────────────────
+    if supabase_client:
+        try:
+            # Table 1: patient_records
+            supabase_client.table("patient_records").insert({
+                "timestamp":       timestamp,
+                "patient_id":      patient_id or "",
+                "patient_name":    patient_name or "",
+                "age":             int(patient_age),
+                "sex":             patient_sex,
+                "ward":            ward or "",
+                "disease_present": bool(disease_present),
+                "diabetes":        bool(diabetes),
+                "hypertension":    bool(bp),
+                "thyroid":         bool(thyroid),
+                "cholesterol":     bool(cholesterol),
+                "asthma":          bool(asthma),
+                "copd":            bool(copd),
+                "image_name":      uploaded.name,
+                "prediction":      label,
+                "confidence":      round(float(confidence), 4),
+                "escore":          round(float(escore_value), 4),
+                "severity":        dominant_severity,
+                "zones_flagged":   len(findings),
+            }).execute()
 
-    val_row = [
-        timestamp, patient_id, label, v1, v2, v3, v4, v5, v6, clinician_notes,
-    ]
-    with open("records/validation_feedback.csv", "a", newline="") as f:
-        csv.writer(f).writerow(val_row)
+            # Table 2: xai_scores
+            supabase_client.table("xai_scores").insert({
+                "timestamp":     timestamp,
+                "patient_id":    patient_id or "",
+                "gradcam_score": round(float(gradcam_score if "gradcam_score" in dir() else 0.0), 4),
+                "lime_score":    round(float(lime_score    if "lime_score"    in dir() else 0.0), 4),
+                "shap_score":    round(float(shap_score    if "shap_score"    in dir() else 0.0), 4),
+                "escore":        round(float(escore_value), 4),
+                "prediction":    label,
+                "confidence":    round(float(confidence), 4),
+            }).execute()
 
-    st.success(f"""
-    ✅ Analysis saved!  **Patient:** {patient_name or patient_id or "Unknown"}  |
-    **Prediction:** {label} ({confidence:.1%})  |  **Severity:** {dominant_severity}  |
-    **E-Score:** {escore_value:.4f}  |  **Zones flagged:** {len(findings)}
-    """)
+            # Table 3: zone_findings
+            for finding in findings:
+                supabase_client.table("zone_findings").insert({
+                    "timestamp":  timestamp,
+                    "patient_id": patient_id or "",
+                    "zone_name":  finding.get("zone", "Unknown"),
+                    "severity":   finding.get("severity", "Unknown"),
+                    "activation": round(float(finding.get("activation", 0.0)), 4),
+                }).execute()
+
+            # Table 4: clinician_feedback
+            supabase_client.table("clinician_feedback").insert({
+                "timestamp":             timestamp,
+                "patient_id":            patient_id or "",
+                "prediction":            label,
+                "finding_correct":       bool(v1),
+                "heatmap_accurate":      bool(v2),
+                "would_use_clinically":  bool(v3),
+                "agrees_with_severity":  bool(v4),
+                "report_useful":         bool(v5),
+                "overall_helpful":       bool(v6),
+                "clinician_notes":       clinician_notes or "",
+            }).execute()
+
+            db_ok = True
+
+        except Exception as db_err:
+            st.warning(f"⚠️ Database save failed: {db_err}. Saving to CSV backup instead.")
+
+    # ── CSV fallback (always runs if DB failed or unavailable) ────────────
+    if not db_ok:
+        record_row = [
+            timestamp, patient_id, patient_name, patient_age, patient_sex,
+            ward, disease_present, major_surgeries,
+            diabetes, bp, thyroid, cholesterol, asthma, copd,
+            uploaded.name, label, f"{confidence:.4f}", f"{escore_value:.4f}",
+            dominant_severity, len(findings),
+        ]
+        with open("records/patient_records.csv", "a", newline="") as f:
+            csv.writer(f).writerow(record_row)
+        val_row = [timestamp, patient_id, label, v1, v2, v3, v4, v5, v6, clinician_notes]
+        with open("records/validation_feedback.csv", "a", newline="") as f:
+            csv.writer(f).writerow(val_row)
+
+    if db_ok:
+        st.success(f"""
+        ✅ Saved to Supabase database!  **Patient:** {patient_name or patient_id or "Unknown"}  |
+        **Prediction:** {label} ({confidence:.1%})  |  **Severity:** {dominant_severity}  |
+        **E-Score:** {escore_value:.4f}  |  **Zones flagged:** {len(findings)}
+        """)
+    else:
+        st.success(f"""
+        ✅ Analysis saved to CSV backup!  **Patient:** {patient_name or patient_id or "Unknown"}  |
+        **Prediction:** {label} ({confidence:.1%})  |  **Severity:** {dominant_severity}  |
+        **E-Score:** {escore_value:.4f}  |  **Zones flagged:** {len(findings)}
+        """)
 
 if gen_pdf_btn:
     with st.spinner("Generating PDF report..."):
