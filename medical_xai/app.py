@@ -1234,10 +1234,12 @@ else:
         with tab1:
             try:
                 import pandas as pd
-                cur = neon_conn.cursor(psycopg2.extras.RealDictCursor)
+                cur = neon_conn.cursor()
                 cur.execute("SELECT * FROM patient_records ORDER BY timestamp DESC LIMIT 200")
-                docs = cur.fetchall()
+                rows = cur.fetchall()
+                cols = [desc[0] for desc in cur.description]
                 cur.close()
+                docs = [dict(zip(cols, row)) for row in rows]
                 if docs:
                     df = pd.DataFrame(docs)
                     total = len(df)
@@ -1259,10 +1261,12 @@ else:
         with tab2:
             try:
                 import pandas as pd
-                cur = neon_conn.cursor(psycopg2.extras.RealDictCursor)
+                cur = neon_conn.cursor()
                 cur.execute("SELECT * FROM xai_scores ORDER BY timestamp DESC LIMIT 200")
-                docs = cur.fetchall()
+                rows = cur.fetchall()
+                cols = [desc[0] for desc in cur.description]
                 cur.close()
+                docs = [dict(zip(cols, row)) for row in rows]
                 if docs:
                     df = pd.DataFrame(docs)
                     c1,c2,c3,c4 = st.columns(4)
@@ -1280,10 +1284,12 @@ else:
         with tab3:
             try:
                 import pandas as pd
-                cur = neon_conn.cursor(psycopg2.extras.RealDictCursor)
+                cur = neon_conn.cursor()
                 cur.execute("SELECT * FROM zone_findings ORDER BY timestamp DESC LIMIT 200")
-                docs = cur.fetchall()
+                rows = cur.fetchall()
+                cols = [desc[0] for desc in cur.description]
                 cur.close()
+                docs = [dict(zip(cols, row)) for row in rows]
                 if docs:
                     df = pd.DataFrame(docs)
                     c1,c2,c3 = st.columns(3)
@@ -1300,10 +1306,12 @@ else:
         with tab4:
             try:
                 import pandas as pd
-                cur = neon_conn.cursor(psycopg2.extras.RealDictCursor)
+                cur = neon_conn.cursor()
                 cur.execute("SELECT * FROM clinician_feedback ORDER BY timestamp DESC LIMIT 200")
-                docs = cur.fetchall()
+                rows = cur.fetchall()
+                cols = [desc[0] for desc in cur.description]
                 cur.close()
+                docs = [dict(zip(cols, row)) for row in rows]
                 if docs:
                     df = pd.DataFrame(docs)
                     bool_cols = ["finding_correct","heatmap_accurate","would_use_clinically","agrees_with_severity","report_useful","overall_helpful"]
