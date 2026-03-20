@@ -12,10 +12,11 @@ Supported Kaggle Dataset:
 import csv
 import os
 try:
-    from pymongo import MongoClient
-    MONGO_AVAILABLE = True
+    import psycopg2
+    import psycopg2.extras
+    NEON_AVAILABLE = True
 except Exception:
-    MONGO_AVAILABLE = False
+    NEON_AVAILABLE = False
 import sys
 import time
 import traceback
@@ -34,21 +35,46 @@ import matplotlib.pyplot as plt
 # ── Streamlit (imported early so we can show errors on screen) ────────────────
 import streamlit as st
 
-# ── Supabase connection ────────────────────────────────────────────────────────
-MONGO_URI = st.secrets.get("MONGO_URI", "")
+# ── Neon PostgreSQL connection ─────────────────────────────────────────────────
+NEON_URL = st.secrets.get("NEON_URL", "")
 
 @st.cache_resource(show_spinner=False)
-def get_mongo():
-    if MONGO_AVAILABLE and MONGO_URI:
+def get_neon():
+    if NEON_AVAILABLE and NEON_URL:
         try:
-            client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-            client.server_info()
-            return client["medxai"]
+            conn = psycopg2.connect(NEON_URL, connect_timeout=10)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS patient_records (
+                    id SERIAL PRIMARY KEY, timestamp TIMESTAMP DEFAULT NOW(),
+                    patient_id TEXT, patient_name TEXT, age INTEGER, sex TEXT,
+                    ward TEXT, disease_present BOOLEAN, diabetes BOOLEAN,
+                    hypertension BOOLEAN, thyroid BOOLEAN, cholesterol BOOLEAN,
+                    asthma BOOLEAN, copd BOOLEAN, image_name TEXT,
+                    prediction TEXT, confidence FLOAT, escore FLOAT,
+                    severity TEXT, zones_flagged INTEGER);
+                CREATE TABLE IF NOT EXISTS xai_scores (
+                    id SERIAL PRIMARY KEY, timestamp TIMESTAMP DEFAULT NOW(),
+                    patient_id TEXT, gradcam_score FLOAT, lime_score FLOAT,
+                    shap_score FLOAT, escore FLOAT, prediction TEXT, confidence FLOAT);
+                CREATE TABLE IF NOT EXISTS zone_findings (
+                    id SERIAL PRIMARY KEY, timestamp TIMESTAMP DEFAULT NOW(),
+                    patient_id TEXT, zone_name TEXT, severity TEXT, activation FLOAT);
+                CREATE TABLE IF NOT EXISTS clinician_feedback (
+                    id SERIAL PRIMARY KEY, timestamp TIMESTAMP DEFAULT NOW(),
+                    patient_id TEXT, prediction TEXT, finding_correct BOOLEAN,
+                    heatmap_accurate BOOLEAN, would_use_clinically BOOLEAN,
+                    agrees_with_severity BOOLEAN, report_useful BOOLEAN,
+                    overall_helpful BOOLEAN, clinician_notes TEXT);
+            """)
+            cur.close()
+            return conn
         except Exception:
             return None
     return None
 
-mongo_db = get_mongo()
+neon_conn = get_neon()
 
 
 # ── Remaining third-party ─────────────────────────────────────────────────────
@@ -1045,74 +1071,50 @@ if save_btn:
     os.makedirs("records", exist_ok=True)
     db_ok = False
 
-    # ── Save to Supabase ───────────────────────────────────────────────────
-    if mongo_db is not None:
+    # ── Save to Neon PostgreSQL ─────────────────────────────────────────
+    if neon_conn is not None:
         try:
-            from datetime import datetime as _dt
-            _ts = _dt.now()
-            mongo_db["patient_records"].insert_one({
-                "timestamp":       _ts,
-                "patient_id":      patient_id or "",
-                "patient_name":    patient_name or "",
-                "age":             int(patient_age),
-                "sex":             patient_sex,
-                "ward":            ward or "",
-                "disease_present": bool(disease_present),
-                "diabetes":        bool(diabetes),
-                "hypertension":    bool(bp),
-                "thyroid":         bool(thyroid),
-                "cholesterol":     bool(cholesterol),
-                "asthma":          bool(asthma),
-                "copd":            bool(copd),
-                "image_name":      uploaded.name,
-                "prediction":      label,
-                "confidence":      round(float(confidence), 4),
-                "escore":          round(float(escore_value), 4),
-                "severity":        dominant_severity,
-                "zones_flagged":   len(findings),
-            })
-
-            # Collection 2: xai_scores
-            mongo_db["xai_scores"].insert_one({
-                "timestamp":     _ts,
-                "patient_id":    patient_id or "",
-                "gradcam_score": round(float(gradcam_score if "gradcam_score" in dir() else 0.0), 4),
-                "lime_score":    round(float(lime_score    if "lime_score"    in dir() else 0.0), 4),
-                "shap_score":    round(float(shap_score    if "shap_score"    in dir() else 0.0), 4),
-                "escore":        round(float(escore_value), 4),
-                "prediction":    label,
-                "confidence":    round(float(confidence), 4),
-            })
-
-            # Collection 3: zone_findings
+            cur = neon_conn.cursor()
+            cur.execute("""
+                INSERT INTO patient_records
+                (patient_id,patient_name,age,sex,ward,disease_present,
+                 diabetes,hypertension,thyroid,cholesterol,asthma,copd,
+                 image_name,prediction,confidence,escore,severity,zones_flagged)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (patient_id or "",patient_name or "",int(patient_age),
+                patient_sex,ward or "",bool(disease_present),bool(diabetes),bool(bp),
+                bool(thyroid),bool(cholesterol),bool(asthma),bool(copd),
+                uploaded.name,label,round(float(confidence),4),
+                round(float(escore_value),4),dominant_severity,len(findings)))
+            cur.execute("""
+                INSERT INTO xai_scores
+                (patient_id,gradcam_score,lime_score,shap_score,escore,prediction,confidence)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+            """, (patient_id or "",
+                round(float(gradcam_score if "gradcam_score" in dir() else 0.0),4),
+                round(float(lime_score if "lime_score" in dir() else 0.0),4),
+                round(float(shap_score if "shap_score" in dir() else 0.0),4),
+                round(float(escore_value),4),label,round(float(confidence),4)))
             for finding in findings:
-                mongo_db["zone_findings"].insert_one({
-                    "timestamp":  _ts,
-                    "patient_id": patient_id or "",
-                    "zone_name":  finding.get("zone", "Unknown"),
-                    "severity":   finding.get("severity", "Unknown"),
-                    "activation": round(float(finding.get("activation", 0.0)), 4),
-                })
-
-            # Collection 4: clinician_feedback
-            mongo_db["clinician_feedback"].insert_one({
-                "timestamp":            _ts,
-                "patient_id":           patient_id or "",
-                "prediction":           label,
-                "finding_correct":      bool(v1),
-                "heatmap_accurate":     bool(v2),
-                "would_use_clinically": bool(v3),
-                "agrees_with_severity": bool(v4),
-                "report_useful":        bool(v5),
-                "overall_helpful":      bool(v6),
-                "clinician_notes":      clinician_notes or "",
-            })
-
+                cur.execute("""
+                    INSERT INTO zone_findings
+                    (patient_id,zone_name,severity,activation)
+                    VALUES (%s,%s,%s,%s)
+                """, (patient_id or "",finding.get("zone","Unknown"),
+                    finding.get("severity","Unknown"),
+                    round(float(finding.get("activation",0.0)),4)))
+            cur.execute("""
+                INSERT INTO clinician_feedback
+                (patient_id,prediction,finding_correct,heatmap_accurate,
+                 would_use_clinically,agrees_with_severity,report_useful,
+                 overall_helpful,clinician_notes)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (patient_id or "",label,bool(v1),bool(v2),bool(v3),
+                bool(v4),bool(v5),bool(v6),clinician_notes or ""))
+            cur.close()
             db_ok = True
-
         except Exception as db_err:
-            st.warning(f"⚠️ Database save failed: {db_err}. Saving to CSV backup instead.")
-
+            st.warning(f"⚠️ Neon DB save failed: {db_err}. Saving to CSV backup instead.")
     # ── CSV fallback (always runs if DB failed or unavailable) ────────────
     if not db_ok:
         record_row = [
@@ -1226,13 +1228,16 @@ else:
         st.session_state.admin_logged_in = False
         st.rerun()
 
-    if mongo_db is not None:
+    if neon_conn is not None:
         tab1, tab2, tab3, tab4 = st.tabs(["👥 Patient Records", "📊 XAI Scores", "🫁 Zone Findings", "🩺 Clinician Feedback"])
 
         with tab1:
             try:
                 import pandas as pd
-                docs = list(mongo_db["patient_records"].find({}, {"_id": 0}).sort("timestamp", -1).limit(200))
+                cur = neon_conn.cursor(psycopg2.extras.RealDictCursor)
+                cur.execute("SELECT * FROM patient_records ORDER BY timestamp DESC LIMIT 200")
+                docs = cur.fetchall()
+                cur.close()
                 if docs:
                     df = pd.DataFrame(docs)
                     total = len(df)
@@ -1254,7 +1259,10 @@ else:
         with tab2:
             try:
                 import pandas as pd
-                docs = list(mongo_db["xai_scores"].find({}, {"_id": 0}).sort("timestamp", -1).limit(200))
+                cur = neon_conn.cursor(psycopg2.extras.RealDictCursor)
+                cur.execute("SELECT * FROM xai_scores ORDER BY timestamp DESC LIMIT 200")
+                docs = cur.fetchall()
+                cur.close()
                 if docs:
                     df = pd.DataFrame(docs)
                     c1,c2,c3,c4 = st.columns(4)
@@ -1272,7 +1280,10 @@ else:
         with tab3:
             try:
                 import pandas as pd
-                docs = list(mongo_db["zone_findings"].find({}, {"_id": 0}).sort("timestamp", -1).limit(200))
+                cur = neon_conn.cursor(psycopg2.extras.RealDictCursor)
+                cur.execute("SELECT * FROM zone_findings ORDER BY timestamp DESC LIMIT 200")
+                docs = cur.fetchall()
+                cur.close()
                 if docs:
                     df = pd.DataFrame(docs)
                     c1,c2,c3 = st.columns(3)
@@ -1289,7 +1300,10 @@ else:
         with tab4:
             try:
                 import pandas as pd
-                docs = list(mongo_db["clinician_feedback"].find({}, {"_id": 0}).sort("timestamp", -1).limit(200))
+                cur = neon_conn.cursor(psycopg2.extras.RealDictCursor)
+                cur.execute("SELECT * FROM clinician_feedback ORDER BY timestamp DESC LIMIT 200")
+                docs = cur.fetchall()
+                cur.close()
                 if docs:
                     df = pd.DataFrame(docs)
                     bool_cols = ["finding_correct","heatmap_accurate","would_use_clinically","agrees_with_severity","report_useful","overall_helpful"]
@@ -1306,7 +1320,7 @@ else:
             except Exception as e:
                 st.error(f"Error loading feedback: {e}")
     else:
-        st.warning("⚠️ MongoDB not connected. Add MONGO_URI to Streamlit secrets.")
+        st.warning("⚠️ Neon DB not connected. Add NEON_URL to Streamlit secrets.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FOOTER
