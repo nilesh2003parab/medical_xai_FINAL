@@ -12,10 +12,10 @@ Supported Kaggle Dataset:
 import csv
 import os
 try:
-    from supabase import create_client, Client
-    SUPABASE_AVAILABLE = True
+    from pymongo import MongoClient
+    MONGO_AVAILABLE = True
 except Exception:
-    SUPABASE_AVAILABLE = False
+    MONGO_AVAILABLE = False
 import sys
 import time
 import traceback
@@ -35,19 +35,20 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 # ── Supabase connection ────────────────────────────────────────────────────────
-SUPABASE_URL = "https://ovwalzmmbugfnfispxqj.supabase.co"
-SUPABASE_KEY = "sb_publishable_FMV-qJF_RTCRDpDU_OVPlg_U5nN3Fkc"
+MONGO_URI = st.secrets.get("MONGO_URI", "")
 
 @st.cache_resource(show_spinner=False)
-def get_supabase():
-    if SUPABASE_AVAILABLE:
+def get_mongo():
+    if MONGO_AVAILABLE and MONGO_URI:
         try:
-            return create_client(SUPABASE_URL, SUPABASE_KEY)
+            client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+            client.server_info()
+            return client["medxai"]
         except Exception:
             return None
     return None
 
-supabase_client = get_supabase()
+mongo_db = get_mongo()
 
 
 # ── Remaining third-party ─────────────────────────────────────────────────────
@@ -1045,11 +1046,12 @@ if save_btn:
     db_ok = False
 
     # ── Save to Supabase ───────────────────────────────────────────────────
-    if supabase_client:
+    if mongo_db is not None:
         try:
-            # Table 1: patient_records
-            supabase_client.table("patient_records").insert({
-                "timestamp":       timestamp,
+            from datetime import datetime as _dt
+            _ts = _dt.now()
+            mongo_db["patient_records"].insert_one({
+                "timestamp":       _ts,
                 "patient_id":      patient_id or "",
                 "patient_name":    patient_name or "",
                 "age":             int(patient_age),
@@ -1068,11 +1070,11 @@ if save_btn:
                 "escore":          round(float(escore_value), 4),
                 "severity":        dominant_severity,
                 "zones_flagged":   len(findings),
-            }).execute()
+            })
 
-            # Table 2: xai_scores
-            supabase_client.table("xai_scores").insert({
-                "timestamp":     timestamp,
+            # Collection 2: xai_scores
+            mongo_db["xai_scores"].insert_one({
+                "timestamp":     _ts,
                 "patient_id":    patient_id or "",
                 "gradcam_score": round(float(gradcam_score if "gradcam_score" in dir() else 0.0), 4),
                 "lime_score":    round(float(lime_score    if "lime_score"    in dir() else 0.0), 4),
@@ -1080,31 +1082,31 @@ if save_btn:
                 "escore":        round(float(escore_value), 4),
                 "prediction":    label,
                 "confidence":    round(float(confidence), 4),
-            }).execute()
+            })
 
-            # Table 3: zone_findings
+            # Collection 3: zone_findings
             for finding in findings:
-                supabase_client.table("zone_findings").insert({
-                    "timestamp":  timestamp,
+                mongo_db["zone_findings"].insert_one({
+                    "timestamp":  _ts,
                     "patient_id": patient_id or "",
                     "zone_name":  finding.get("zone", "Unknown"),
                     "severity":   finding.get("severity", "Unknown"),
                     "activation": round(float(finding.get("activation", 0.0)), 4),
-                }).execute()
+                })
 
-            # Table 4: clinician_feedback
-            supabase_client.table("clinician_feedback").insert({
-                "timestamp":             timestamp,
-                "patient_id":            patient_id or "",
-                "prediction":            label,
-                "finding_correct":       bool(v1),
-                "heatmap_accurate":      bool(v2),
-                "would_use_clinically":  bool(v3),
-                "agrees_with_severity":  bool(v4),
-                "report_useful":         bool(v5),
-                "overall_helpful":       bool(v6),
-                "clinician_notes":       clinician_notes or "",
-            }).execute()
+            # Collection 4: clinician_feedback
+            mongo_db["clinician_feedback"].insert_one({
+                "timestamp":            _ts,
+                "patient_id":           patient_id or "",
+                "prediction":           label,
+                "finding_correct":      bool(v1),
+                "heatmap_accurate":     bool(v2),
+                "would_use_clinically": bool(v3),
+                "agrees_with_severity": bool(v4),
+                "report_useful":        bool(v5),
+                "overall_helpful":      bool(v6),
+                "clinician_notes":      clinician_notes or "",
+            })
 
             db_ok = True
 
@@ -1191,132 +1193,120 @@ if gen_pdf_btn:
 st.markdown("---")
 st.markdown("## 🗄️ Patient Records Database")
 
-# Load password from Streamlit secrets (safe) or fallback to default
-try:
-    ADMIN_PASSWORD = st.secrets["ADMIN_PASSWORD"]
-except Exception:
-    ADMIN_PASSWORD = "MedXAI@2024"  # default if secrets not configured
+# ─────────────────────────────────────────────────────────────────────────────
+# PATIENT RECORDS VIEWER (ADMIN ONLY)
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown("### 🗄️ Patient Records Database")
 
-# Session state — keep admin logged in during session
 if "admin_logged_in" not in st.session_state:
     st.session_state.admin_logged_in = False
 
 if not st.session_state.admin_logged_in:
     st.markdown("""
-    <div style='background:#E3F2FD;border:1.5px solid #29b6f6;border-radius:10px;
-    padding:18px 24px;margin:10px 0;'>
-    <span style='font-size:1.2rem;font-weight:bold;color:#01579b;'>🔒 Admin Access Required</span><br>
-    <span style='color:#546e7a;font-size:0.9rem;'>Patient records are confidential.
-    Only the system administrator can view stored data.</span>
+    <div style="background:#f0f8ff;border:2px solid #29b6f6;border-radius:8px;padding:18px;text-align:center;">
+        🔒 <strong style="color:#01579b">Admin Access Required</strong><br>
+        <span style="color:#546e7a;font-size:0.9rem">Enter the admin password to view stored patient records</span>
     </div>
     """, unsafe_allow_html=True)
-
-    pw_col, btn_col = st.columns([3, 1])
-    with pw_col:
-        admin_input = st.text_input("Admin Password", type="password",
-                                     placeholder="Enter admin password...",
-                                     key="admin_pw", label_visibility="collapsed")
-    with btn_col:
-        login_btn = st.button("🔓 Login", use_container_width=True)
-
-    if login_btn:
-        if admin_input == ADMIN_PASSWORD:
-            st.session_state.admin_logged_in = True
-            st.rerun()
-        else:
-            st.error("❌ Incorrect password. Access denied.")
+    col_pw, col_btn = st.columns([3, 1])
+    with col_pw:
+        entered_pw = st.text_input("Admin Password", type="password", label_visibility="collapsed", placeholder="Enter admin password...")
+    with col_btn:
+        if st.button("🔓 Login", use_container_width=True):
+            admin_pw = st.secrets.get("ADMIN_PASSWORD", "MedXAI@2024")
+            if entered_pw == admin_pw:
+                st.session_state.admin_logged_in = True
+                st.rerun()
+            else:
+                st.error("❌ Incorrect password")
 else:
-    # Logout button
-    lo_col, _ = st.columns([1, 5])
-    with lo_col:
-        if st.button("🔒 Logout", use_container_width=True):
-            st.session_state.admin_logged_in = False
-            st.rerun()
-    st.success("✅ Admin access granted — viewing confidential patient records.")
+    # Logout
+    if st.button("🔒 Logout", type="secondary"):
+        st.session_state.admin_logged_in = False
+        st.rerun()
 
-if st.session_state.admin_logged_in:
+    if mongo_db is not None:
+        tab1, tab2, tab3, tab4 = st.tabs(["👥 Patient Records", "📊 XAI Scores", "🫁 Zone Findings", "🩺 Clinician Feedback"])
 
-    def load_table(table_name, order_col="timestamp"):
-        if supabase_client:
+        with tab1:
             try:
-                res = supabase_client.table(table_name).select("*").order(order_col, desc=True).limit(100).execute()
-                if res.data:
-                    import pandas as pd
-                    return pd.DataFrame(res.data)
+                import pandas as pd
+                docs = list(mongo_db["patient_records"].find({}, {"_id": 0}).sort("timestamp", -1).limit(200))
+                if docs:
+                    df = pd.DataFrame(docs)
+                    total = len(df)
+                    pneumonia_count = int((df["prediction"] == "Pneumonia").sum())
+                    normal_count = total - pneumonia_count
+                    avg_conf = df["confidence"].mean() if "confidence" in df.columns else 0
+                    m1,m2,m3,m4 = st.columns(4)
+                    m1.metric("Total Patients", total)
+                    m2.metric("Pneumonia", pneumonia_count)
+                    m3.metric("Normal", normal_count)
+                    m4.metric("Avg Confidence", f"{avg_conf:.1%}")
+                    st.dataframe(df, use_container_width=True)
+                    st.download_button("📥 Download CSV", df.to_csv(index=False), "patient_records.csv", "text/csv")
+                else:
+                    st.info("No patient records found yet.")
             except Exception as e:
-                st.error(f"Could not load {table_name}: {e}")
-        return None
+                st.error(f"Error loading records: {e}")
 
-    view_tab1, view_tab2, view_tab3, view_tab4 = st.tabs([
-        "👥 Patient Records", "📊 XAI Scores", "🫁 Zone Findings", "🩺 Clinician Feedback"
-    ])
+        with tab2:
+            try:
+                import pandas as pd
+                docs = list(mongo_db["xai_scores"].find({}, {"_id": 0}).sort("timestamp", -1).limit(200))
+                if docs:
+                    df = pd.DataFrame(docs)
+                    c1,c2,c3,c4 = st.columns(4)
+                    c1.metric("Avg Grad-CAM", f"{df['gradcam_score'].mean():.3f}" if "gradcam_score" in df else "—")
+                    c2.metric("Avg LIME", f"{df['lime_score'].mean():.3f}" if "lime_score" in df else "—")
+                    c3.metric("Avg SHAP", f"{df['shap_score'].mean():.3f}" if "shap_score" in df else "—")
+                    c4.metric("Avg E-Score", f"{df['escore'].mean():.3f}" if "escore" in df else "—")
+                    st.dataframe(df, use_container_width=True)
+                    st.download_button("📥 Download CSV", df.to_csv(index=False), "xai_scores.csv", "text/csv")
+                else:
+                    st.info("No XAI scores found yet.")
+            except Exception as e:
+                st.error(f"Error loading XAI scores: {e}")
 
-    with view_tab1:
-        df = load_table("patient_records")
-        if df is not None:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Patients", len(df))
-            c2.metric("Pneumonia Cases", int((df["prediction"] == "Pneumonia").sum()))
-            c3.metric("Normal Cases",    int((df["prediction"] == "Normal").sum()))
-            c4.metric("Avg Confidence",  f"{df['confidence'].mean():.1%}" if "confidence" in df.columns else "—")
-            st.dataframe(
-                df[["timestamp","patient_id","patient_name","age","sex","prediction","confidence","severity","escore","zones_flagged"]],
-                use_container_width=True, hide_index=True
-            )
-            csv_data = df.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download Patient Records CSV", csv_data,
-                               f"patient_records_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
-        else:
-            st.info("No patient records found. Save an analysis to see data here.", icon="ℹ️")
+        with tab3:
+            try:
+                import pandas as pd
+                docs = list(mongo_db["zone_findings"].find({}, {"_id": 0}).sort("timestamp", -1).limit(200))
+                if docs:
+                    df = pd.DataFrame(docs)
+                    c1,c2,c3 = st.columns(3)
+                    c1.metric("Total Findings", len(df))
+                    c2.metric("Severe", int((df["severity"]=="Severe").sum()) if "severity" in df.columns else 0)
+                    c3.metric("Moderate", int((df["severity"]=="Moderate").sum()) if "severity" in df.columns else 0)
+                    st.dataframe(df, use_container_width=True)
+                    st.download_button("📥 Download CSV", df.to_csv(index=False), "zone_findings.csv", "text/csv")
+                else:
+                    st.info("No zone findings found yet.")
+            except Exception as e:
+                st.error(f"Error loading zone findings: {e}")
 
-    with view_tab2:
-        df2 = load_table("xai_scores")
-        if df2 is not None:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Records",   len(df2))
-            c2.metric("Avg Grad-CAM",    f"{df2['gradcam_score'].mean():.3f}" if "gradcam_score" in df2.columns else "—")
-            c3.metric("Avg LIME",        f"{df2['lime_score'].mean():.3f}"    if "lime_score"    in df2.columns else "—")
-            c4.metric("Avg E-Score",     f"{df2['escore'].mean():.3f}"        if "escore"        in df2.columns else "—")
-            st.dataframe(df2, use_container_width=True, hide_index=True)
-            csv_data2 = df2.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download XAI Scores CSV", csv_data2,
-                               f"xai_scores_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
-        else:
-            st.info("No XAI score records found yet.", icon="ℹ️")
-
-    with view_tab3:
-        df3 = load_table("zone_findings")
-        if df3 is not None:
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Findings", len(df3))
-            if "severity" in df3.columns:
-                c2.metric("Severe Zones",   int((df3["severity"] == "Severe").sum()))
-                c3.metric("Moderate Zones", int((df3["severity"] == "Moderate").sum()))
-            st.dataframe(df3, use_container_width=True, hide_index=True)
-            csv_data3 = df3.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download Zone Findings CSV", csv_data3,
-                               f"zone_findings_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
-        else:
-            st.info("No zone findings found yet.", icon="ℹ️")
-
-    with view_tab4:
-        df4 = load_table("clinician_feedback")
-        if df4 is not None:
-            st.metric("Total Feedback Records", len(df4))
-            bool_cols = ["finding_correct","heatmap_accurate","would_use_clinically",
-                         "agrees_with_severity","report_useful","overall_helpful"]
-            existing = [c for c in bool_cols if c in df4.columns]
-            if existing:
-                agree_rates = df4[existing].mean() * 100
-                cols = st.columns(len(existing))
-                for i, col_name in enumerate(existing):
-                    cols[i].metric(col_name.replace("_", " ").title(), f"{agree_rates[col_name]:.0f}%")
-            st.dataframe(df4, use_container_width=True, hide_index=True)
-            csv_data4 = df4.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download Feedback CSV", csv_data4,
-                               f"clinician_feedback_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
-        else:
-            st.info("No clinician feedback found yet.", icon="ℹ️")
+        with tab4:
+            try:
+                import pandas as pd
+                docs = list(mongo_db["clinician_feedback"].find({}, {"_id": 0}).sort("timestamp", -1).limit(200))
+                if docs:
+                    df = pd.DataFrame(docs)
+                    bool_cols = ["finding_correct","heatmap_accurate","would_use_clinically","agrees_with_severity","report_useful","overall_helpful"]
+                    c1,c2,c3 = st.columns(3)
+                    c1.metric("Total Feedback", len(df))
+                    if "finding_correct" in df.columns:
+                        c2.metric("Finding Correct %", f"{df['finding_correct'].mean():.0%}")
+                    if "overall_helpful" in df.columns:
+                        c3.metric("Overall Helpful %", f"{df['overall_helpful'].mean():.0%}")
+                    st.dataframe(df, use_container_width=True)
+                    st.download_button("📥 Download CSV", df.to_csv(index=False), "clinician_feedback.csv", "text/csv")
+                else:
+                    st.info("No clinician feedback found yet.")
+            except Exception as e:
+                st.error(f"Error loading feedback: {e}")
+    else:
+        st.warning("⚠️ MongoDB not connected. Add MONGO_URI to Streamlit secrets.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FOOTER
